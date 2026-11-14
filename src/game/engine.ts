@@ -5,10 +5,14 @@
  * Systems:
  *  - Mergeable objects with 5 tiers; two same-tier objects merge on contact.
  *  - Drag & drop touch input (kinematic hold).
- *  - Mechanical cannon: aim in the bottom strip, release to fire a ball.
- *  - Destructible obstacles with HP, splash damage and chain reactions.
+ *  - Mechanical cannon: slides along the front edge and aims where the
+ *    finger points, with magnetic snapping to obstacles, a dotted
+ *    trajectory preview and a pulsing target reticle. Release to fire.
+ *  - Destructible obstacles (wood crate / glass crystal / stone) with
+ *    floating HP bars, splash damage and chain reactions.
  *  - Combos, score, goal tracking, win/lose detection.
  *  - Particles, debris, shockwaves, floaties, shake, sounds, haptics.
+ *  - Built-in tutorial pulses & hints for the first level.
  */
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
@@ -28,6 +32,7 @@ export interface EngineCallbacks {
   onGoal: (current: number, target: number) => void
   onBombArmed: (armed: boolean) => void
   onBombConsumed: () => void
+  onBallActive: (active: boolean) => void
   onWin: (score: number) => void
   onLose: (reason: string) => void
 }
@@ -44,11 +49,18 @@ interface MergeItem {
 interface ObstacleItem {
   body: CANNON.Body
   mesh: THREE.Mesh
+  w: number
+  h: number
+  d: number
   hp: number
   maxHp: number
   kind: ObstacleKind
   flash: number
   dead: boolean
+  hpSprite: THREE.Sprite
+  hpCanvas: HTMLCanvasElement
+  hpCtx: CanvasRenderingContext2D
+  hpTex: THREE.CanvasTexture
 }
 
 interface BallItem {
@@ -74,12 +86,29 @@ interface PendingHit {
 }
 
 const HOLD_Y = 1.15
-const AIM_ELEVATION = 0.55 // barrel pitch (rad)
+const AIM_PLANE_Y = 0.55 // virtual plane the finger aims on
+const AIM_ELEVATION = 0.5 // barrel pitch (visual)
+const SHOT_SPEED = 17.5
+const SHOT_VY = 6.6
+const MAX_AIM_ANGLE = 1.15
+const TRAJ_DOTS = 14
+const GRAVITY = 16
 
 function easeOutBack(t: number): number {
   const c1 = 1.70158
   const c3 = c1 + 1
   return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2)
+}
+
+function roundedRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  const rad = Math.min(r, h / 2, w / 2)
+  ctx.beginPath()
+  ctx.moveTo(x + rad, y)
+  ctx.arcTo(x + w, y, x + w, y + h, rad)
+  ctx.arcTo(x + w, y + h, x, y + h, rad)
+  ctx.arcTo(x, y + h, x, y, rad)
+  ctx.arcTo(x, y, x + w, y, rad)
+  ctx.closePath()
 }
 
 export class GameEngine {
@@ -107,6 +136,8 @@ export class GameEngine {
 
   private tierGeos: THREE.BufferGeometry[] = []
   private obstacleGeo: THREE.BufferGeometry
+  private woodTex: THREE.CanvasTexture
+  private stoneTex: THREE.CanvasTexture
 
   // state
   private time = 0
@@ -118,6 +149,7 @@ export class GameEngine {
   private combo = 0
   private comboUntil = 0
   private shots = 0
+  private shotsFired = 0
   private bombArmed = false
   private goalCurrent = 0
   private won = false
@@ -128,11 +160,13 @@ export class GameEngine {
   private lostAt = 0
   private loseFired = false
   private stuckSince = 0
+  private warnedStuck = false
   private failTimer = 0
   private lastBreakTime = -10
   private lastShotTime = -10
   private shake = 0
   private skinId = 'classic'
+  private lastBallColor = '#5eead4'
 
   // merge pipeline
   private pendingPairs = new Map<string, [MergeItem, MergeItem]>()
@@ -147,11 +181,33 @@ export class GameEngine {
   private aiming = false
   private aimAngle = 0
 
-  // cannon visuals
+  // cannon visuals + smart aiming
   private cannonGroup = new THREE.Group()
+  private barrelGroup = new THREE.Group()
   private aimArrow = new THREE.Group()
   private cannonPos = new THREE.Vector3()
+  private cannonRangeX = 4
+  private cannonTargetX = 0
+  private aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -AIM_PLANE_Y)
+  private aimTarget = new THREE.Vector3(0, AIM_PLANE_Y, -2)
+  private recoil = 0
   private canShoot = false
+
+  // trajectory preview + reticle
+  private trajGroup = new THREE.Group()
+  private trajDots: THREE.Mesh[] = []
+  private trajMat: THREE.MeshBasicMaterial
+  private reticle: THREE.Group
+  private reticleMat: THREE.MeshBasicMaterial
+  private trailTimer = 0
+
+  // tutorial pulses
+  private tPulseUntil = 0
+  private tPulseNext = 0
+  private tMergeHintShown = false
+  private tShotHintCount = 0
+  private tShotHintNext = 6.5
+  private clearHintShown = false
 
   // shared listeners
   private onItemCollide = (evt: CollideEvt) => this.queuePair(evt)
@@ -179,7 +235,7 @@ export class GameEngine {
     // ------------------------------------------------------------- scene
     this.scene = new THREE.Scene()
     this.scene.background = this.makeGradientTexture()
-    this.scene.fog = new THREE.Fog(0x9fe8d4, 34, 70)
+    this.scene.fog = new THREE.Fog(0xa9ecd9, 32, 72)
 
     const pmrem = new THREE.PMREMGenerator(this.renderer)
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
@@ -188,9 +244,9 @@ export class GameEngine {
 
     this.camera = new THREE.PerspectiveCamera(44, 1, 0.1, 120)
 
-    const hemi = new THREE.HemisphereLight(0xf2fffa, 0x2b9a7c, 0.85)
+    const hemi = new THREE.HemisphereLight(0xf6fffa, 0x2b9a7c, 0.85)
     this.scene.add(hemi)
-    const sun = new THREE.DirectionalLight(0xffffff, 1.7)
+    const sun = new THREE.DirectionalLight(0xfff8ec, 1.75)
     sun.position.set(7, 14, 6)
     sun.castShadow = true
     sun.shadow.mapSize.set(1024, 1024)
@@ -203,7 +259,7 @@ export class GameEngine {
     this.scene.add(sun)
 
     // ----------------------------------------------------------- physics
-    this.world = new CANNON.World({ gravity: new CANNON.Vec3(0, -16, 0) })
+    this.world = new CANNON.World({ gravity: new CANNON.Vec3(0, -GRAVITY, 0) })
     this.world.broadphase = new CANNON.SAPBroadphase(this.world)
     this.world.allowSleep = true
     this.world.solver.iterations = 10
@@ -218,9 +274,12 @@ export class GameEngine {
     this.world.addBody(floorBody)
 
     // ------------------------------------------------------------- world
+    this.woodTex = this.makeWoodTexture()
+    this.stoneTex = this.makeStoneTexture()
     this.buildEnvironment()
     this.obstacleGeo = new RoundedBoxGeometry(1, 1, 1, 2, 0.09)
     this.buildCannon()
+    this.buildTrajectory()
     for (const s of this.def.spawns) this.makeItem(s.tier, s.x, 1.7, s.z)
     for (const o of this.def.obstacles) this.makeObstacle(o)
 
@@ -242,6 +301,9 @@ export class GameEngine {
     this.cb.onGoal(0, goalTarget)
     this.cb.onShots(this.shots)
 
+    // level-1 tutorial: pulse rings under two same-tier items
+    if (this.levelIndex === 0) this.tPulseUntil = 12
+
     this.layout()
     this.loop()
   }
@@ -254,8 +316,8 @@ export class GameEngine {
     c.height = 512
     const ctx = c.getContext('2d')!
     const g = ctx.createLinearGradient(0, 0, 0, 512)
-    g.addColorStop(0, '#dcfaee')
-    g.addColorStop(1, '#7ce3d6')
+    g.addColorStop(0, '#e6fcf3')
+    g.addColorStop(1, '#8ce6d2')
     ctx.fillStyle = g
     ctx.fillRect(0, 0, 2, 512)
     const tex = new THREE.CanvasTexture(c)
@@ -268,15 +330,84 @@ export class GameEngine {
     c.width = 256
     c.height = 256
     const ctx = c.getContext('2d')!
-    ctx.fillStyle = '#b9f1de'
+    ctx.fillStyle = '#c3f2df'
     ctx.fillRect(0, 0, 256, 256)
-    ctx.fillStyle = '#a9ecd6'
+    ctx.fillStyle = '#b9efdc'
     for (let y = 0; y < 4; y++)
       for (let x = 0; x < 4; x++) if ((x + y) % 2 === 0) ctx.fillRect(x * 64, y * 64, 64, 64)
     const tex = new THREE.CanvasTexture(c)
     tex.wrapS = THREE.RepeatWrapping
     tex.wrapT = THREE.RepeatWrapping
-    tex.repeat.set(10, 10)
+    tex.repeat.set(11, 11)
+    tex.colorSpace = THREE.SRGBColorSpace
+    tex.anisotropy = 4
+    return tex
+  }
+
+  /** Warm wooden planks texture for crates. */
+  private makeWoodTexture(): THREE.CanvasTexture {
+    const c = document.createElement('canvas')
+    c.width = 128
+    c.height = 128
+    const ctx = c.getContext('2d')!
+    const shades = ['#cf9058', '#c68a52', '#d29a63', '#c2854f']
+    for (let i = 0; i < 4; i++) {
+      ctx.fillStyle = shades[i]
+      ctx.fillRect(0, i * 32, 128, 32)
+      // grain streaks
+      ctx.strokeStyle = 'rgba(122,74,38,0.28)'
+      ctx.lineWidth = 1.4
+      for (let g = 0; g < 3; g++) {
+        const gy = i * 32 + 6 + g * 9 + Math.random() * 4
+        ctx.beginPath()
+        ctx.moveTo(4, gy)
+        ctx.bezierCurveTo(40, gy - 3, 80, gy + 3, 124, gy)
+        ctx.stroke()
+      }
+      // plank separator
+      ctx.fillStyle = 'rgba(96,58,28,0.75)'
+      ctx.fillRect(0, i * 32, 128, 2.4)
+    }
+    // nails
+    ctx.fillStyle = '#7a4a26'
+    for (const [nx, ny] of [[8, 6], [120, 6], [8, 122], [120, 122]]) {
+      ctx.beginPath()
+      ctx.arc(nx, ny, 2.6, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    const tex = new THREE.CanvasTexture(c)
+    tex.colorSpace = THREE.SRGBColorSpace
+    tex.anisotropy = 4
+    return tex
+  }
+
+  /** Speckled granite texture for stones. */
+  private makeStoneTexture(): THREE.CanvasTexture {
+    const c = document.createElement('canvas')
+    c.width = 128
+    c.height = 128
+    const ctx = c.getContext('2d')!
+    ctx.fillStyle = '#a7b3ad'
+    ctx.fillRect(0, 0, 128, 128)
+    for (let i = 0; i < 260; i++) {
+      const shade = Math.random()
+      ctx.fillStyle =
+        shade > 0.6 ? 'rgba(120,132,126,0.5)' : shade > 0.25 ? 'rgba(178,190,184,0.5)' : 'rgba(88,100,94,0.4)'
+      ctx.beginPath()
+      ctx.arc(Math.random() * 128, Math.random() * 128, 1 + Math.random() * 3.4, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    ctx.strokeStyle = 'rgba(84,96,90,0.5)'
+    ctx.lineWidth = 1.6
+    for (let i = 0; i < 4; i++) {
+      ctx.beginPath()
+      const sx = Math.random() * 128
+      const sy = Math.random() * 128
+      ctx.moveTo(sx, sy)
+      ctx.lineTo(sx + (Math.random() - 0.5) * 60, sy + (Math.random() - 0.5) * 60)
+      ctx.stroke()
+    }
+    const tex = new THREE.CanvasTexture(c)
     tex.colorSpace = THREE.SRGBColorSpace
     tex.anisotropy = 4
     return tex
@@ -301,7 +432,7 @@ export class GameEngine {
     // tray inner floor
     const tray = new THREE.Mesh(
       new THREE.PlaneGeometry(W, D),
-      new THREE.MeshStandardMaterial({ color: 0xd2fbe9, roughness: 0.5, metalness: 0.02 })
+      new THREE.MeshStandardMaterial({ color: 0xeefcf5, roughness: 0.5, metalness: 0.02 })
     )
     tray.rotation.x = -Math.PI / 2
     tray.position.y = 0.005
@@ -309,7 +440,7 @@ export class GameEngine {
     this.scene.add(tray)
 
     // walls
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0x7fd8c2, roughness: 0.35, metalness: 0.05 })
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0x77dbc3, roughness: 0.35, metalness: 0.05 })
     const addWall = (w: number, h: number, d: number, x: number, y: number, z: number) => {
       const mesh = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 2, 0.1), wallMat)
       mesh.position.set(x, y, z)
@@ -331,43 +462,93 @@ export class GameEngine {
   }
 
   private buildCannon() {
-    const { trayD: D } = this.def
-    this.cannonPos.set(0, 0, D / 2 + 1.45)
+    const { trayW: W, trayD: D } = this.def
+    this.cannonPos.set(0, 0, D / 2 + 1.35)
+    this.cannonRangeX = W / 2 + 0.7
     this.cannonGroup.position.copy(this.cannonPos)
 
+    // plinth base (dark teal)
     const base = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.62, 0.72, 0.55, 24),
-      new THREE.MeshStandardMaterial({ color: 0x2f6f63, roughness: 0.4, metalness: 0.35 })
+      new THREE.CylinderGeometry(0.64, 0.76, 0.5, 24),
+      new THREE.MeshStandardMaterial({ color: 0x1e5c4e, roughness: 0.45, metalness: 0.3 })
     )
-    base.position.y = 0.28
+    base.position.y = 0.25
     base.castShadow = true
     this.cannonGroup.add(base)
 
+    // amber accent ring
+    const ring = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.58, 0.58, 0.1, 24),
+      new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.35, metalness: 0.4 })
+    )
+    ring.position.y = 0.53
+    this.cannonGroup.add(ring)
+
+    // rotating turret + barrel (recoils on fire)
     const pivot = new THREE.Group()
-    pivot.position.y = 0.62
+    pivot.position.y = 0.72
     pivot.rotation.x = -AIM_ELEVATION
+    this.barrelGroup.position.z = 0
     const barrel = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.2, 0.27, 1.5, 18),
-      new THREE.MeshStandardMaterial({ color: 0x3b8a78, roughness: 0.3, metalness: 0.55 })
+      new THREE.CylinderGeometry(0.2, 0.28, 1.6, 18),
+      new THREE.MeshStandardMaterial({ color: 0x2c7a68, roughness: 0.3, metalness: 0.5 })
     )
     barrel.rotation.x = -Math.PI / 2
-    barrel.position.z = -0.72
+    barrel.position.z = -0.78
     barrel.castShadow = true
-    pivot.add(barrel)
+    const muzzle = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.3, 0.3, 0.16, 18),
+      new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.3, metalness: 0.55 })
+    )
+    muzzle.rotation.x = -Math.PI / 2
+    muzzle.position.z = -1.5
+    this.barrelGroup.add(barrel, muzzle)
+    pivot.add(this.barrelGroup)
     this.cannonGroup.add(pivot)
 
-    // aim arrow (shown when a shot is available)
-    const arrowMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.55, depthWrite: false })
-    const strip = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 2.2), arrowMat)
+    // ground chevrons in front of the cannon (direction hint)
+    const arrowMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.6, depthWrite: false })
+    const strip = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 1.6), arrowMat)
     strip.rotation.x = -Math.PI / 2
-    strip.position.set(0, 0.09, -2.0)
-    const head = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.62, 4), arrowMat)
+    strip.position.set(0, 0.09, -1.5)
+    const head = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.55, 4), arrowMat)
     head.rotation.x = -Math.PI / 2
-    head.position.set(0, 0.09, -3.4)
+    head.position.set(0, 0.09, -2.6)
     this.aimArrow.add(strip, head)
     this.cannonGroup.add(this.aimArrow)
 
     this.scene.add(this.cannonGroup)
+  }
+
+  /** Dotted trajectory line + pulsing target reticle. */
+  private buildTrajectory() {
+    this.trajMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.85, depthWrite: false })
+    const dotGeo = new THREE.SphereGeometry(0.055, 8, 6)
+    for (let i = 0; i < TRAJ_DOTS; i++) {
+      const dot = new THREE.Mesh(dotGeo, this.trajMat)
+      dot.visible = false
+      this.trajDots.push(dot)
+      this.trajGroup.add(dot)
+    }
+    this.scene.add(this.trajGroup)
+
+    this.reticleMat = new THREE.MeshBasicMaterial({
+      color: 0xf59e0b,
+      transparent: true,
+      opacity: 0.95,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    })
+    this.reticle = new THREE.Group()
+    const outer = new THREE.Mesh(new THREE.RingGeometry(0.46, 0.55, 32), this.reticleMat)
+    const inner = new THREE.Mesh(new THREE.RingGeometry(0.18, 0.24, 24), this.reticleMat)
+    outer.rotation.x = -Math.PI / 2
+    inner.rotation.x = -Math.PI / 2
+    outer.position.y = 0.07
+    inner.position.y = 0.07
+    this.reticle.add(outer, inner)
+    this.reticle.visible = false
+    this.scene.add(this.reticle)
   }
 
   private layout() {
@@ -379,10 +560,10 @@ export class GameEngine {
     const vFov = THREE.MathUtils.degToRad(this.camera.fov)
     const hFov = 2 * Math.atan(Math.tan(vFov / 2) * aspect)
     const distW = (this.def.trayW / 2 + 1.4) / Math.tan(hFov / 2)
-    const distD = ((this.def.trayD / 2 + 2.6) / Math.tan(vFov / 2)) * 0.74
+    const distD = ((this.def.trayD / 2 + 2.9) / Math.tan(vFov / 2)) * 0.72
     const dist = Math.max(distW, distD, Math.max(this.def.trayW, this.def.trayD) * 1.2)
     this.camBase.set(0, dist * 0.78, dist * 0.64)
-    this.camLook.set(0, 0, this.def.trayD * 0.06)
+    this.camLook.set(0, 0.1, this.def.trayD * 0.04)
     this.camera.updateProjectionMatrix()
   }
 
@@ -498,28 +679,86 @@ export class GameEngine {
     body.sleepTimeLimit = 0.6
     this.world.addBody(body)
 
-    const mat = new THREE.MeshStandardMaterial({
-      color: style.color,
-      roughness: o.kind === 'crystal' ? 0.15 : 0.62,
-      metalness: o.kind === 'crystal' ? 0.35 : 0.05,
-      transparent: o.kind === 'crystal',
-      opacity: o.kind === 'crystal' ? 0.88 : 1,
-      emissive: 0x000000,
-    })
+    // distinct look per kind: wood crate / glassy crystal / granite stone
+    const mat =
+      o.kind === 'crate'
+        ? new THREE.MeshStandardMaterial({ map: this.woodTex, roughness: 0.62, metalness: 0.04 })
+        : o.kind === 'crystal'
+          ? new THREE.MeshStandardMaterial({
+              color: 0x7ee8ef,
+              roughness: 0.12,
+              metalness: 0.1,
+              transparent: true,
+              opacity: 0.78,
+              emissive: 0x0d9488,
+              emissiveIntensity: 0.3,
+            })
+          : new THREE.MeshStandardMaterial({ map: this.stoneTex, roughness: 0.85, metalness: 0.02 })
     const mesh = new THREE.Mesh(this.obstacleGeo, mat)
     mesh.scale.set(o.w, o.h, o.d)
     mesh.castShadow = true
     mesh.receiveShadow = true
     this.scene.add(mesh)
 
-    this.obstacles.push({ body, mesh, hp: o.hp, maxHp: o.hp, kind: o.kind, flash: 0, dead: false })
+    // floating HP bar (billboard sprite, always visible)
+    const hpCanvas = document.createElement('canvas')
+    hpCanvas.width = 100
+    hpCanvas.height = 16
+    const hpCtx = hpCanvas.getContext('2d')!
+    const hpTex = new THREE.CanvasTexture(hpCanvas)
+    hpTex.colorSpace = THREE.SRGBColorSpace
+    const hpSprite = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: hpTex, transparent: true, depthTest: false })
+    )
+    hpSprite.scale.set(1.15, 0.18, 1)
+    hpSprite.renderOrder = 20
+    this.scene.add(hpSprite)
+
+    const item: ObstacleItem = {
+      body,
+      mesh,
+      w: o.w,
+      h: o.h,
+      d: o.d,
+      hp: o.hp,
+      maxHp: o.hp,
+      kind: o.kind,
+      flash: 0,
+      dead: false,
+      hpSprite,
+      hpCanvas,
+      hpCtx,
+      hpTex,
+    }
+    this.obstacles.push(item)
+    this.drawHpBar(item)
+  }
+
+  private drawHpBar(o: ObstacleItem) {
+    const ctx = o.hpCtx
+    const w = o.hpCanvas.width
+    const h = o.hpCanvas.height
+    ctx.clearRect(0, 0, w, h)
+    ctx.fillStyle = 'rgba(15,60,52,0.75)'
+    roundedRectPath(ctx, 0, 0, w, h, h / 2)
+    ctx.fill()
+    const ratio = Math.max(0, o.hp / o.maxHp)
+    if (ratio > 0) {
+      ctx.fillStyle = ratio > 0.5 ? '#4ade80' : ratio > 0.25 ? '#fbbf24' : '#fb7185'
+      roundedRectPath(ctx, 2.5, 2.5, (w - 5) * ratio, h - 5, (h - 5) / 2)
+      ctx.fill()
+    }
+    o.hpTex.needsUpdate = true
   }
 
   private removeObstacle(o: ObstacleItem) {
     o.dead = true
     this.world.removeBody(o.body)
     this.scene.remove(o.mesh)
+    this.scene.remove(o.hpSprite)
     ;(o.mesh.material as THREE.Material).dispose()
+    ;(o.hpSprite.material as THREE.SpriteMaterial).dispose()
+    o.hpTex.dispose()
     this.obstacles = this.obstacles.filter((x) => x !== o)
   }
 
@@ -535,9 +774,21 @@ export class GameEngine {
     audio.unlock()
     if (this.paused || this.won || this.lost || this.disposed) return
     this.setNdc(e)
-    this.raycaster.setFromCamera(this.ndc, this.camera)
 
-    // 1) pick a mergeable object
+    const rect = this.canvas.getBoundingClientRect()
+    const inStrip = e.clientY - rect.top > rect.height * 0.83
+
+    // 1) bottom strip ALWAYS starts aiming (never steals an item drag)
+    if (inStrip) {
+      if (!this.canShoot) return
+      this.aiming = true
+      this.updateAim()
+      this.canvas.setPointerCapture(e.pointerId)
+      return
+    }
+
+    // 2) pick a mergeable object
+    this.raycaster.setFromCamera(this.ndc, this.camera)
     const meshes: THREE.Mesh[] = []
     for (const it of this.items.values()) if (!it.consumed) meshes.push(it.mesh)
     const hits = this.raycaster.intersectObjects(meshes, false)
@@ -552,15 +803,6 @@ export class GameEngine {
       this.holdPlane.set(new THREE.Vector3(0, 1, 0), -HOLD_Y)
       this.updateDragPoint()
       audio.pick()
-      this.canvas.setPointerCapture(e.pointerId)
-      return
-    }
-
-    // 2) shooting strip at the bottom of the screen
-    const rect = this.canvas.getBoundingClientRect()
-    if (e.clientY - rect.top > rect.height * 0.82) {
-      this.aiming = true
-      this.updateAim()
       this.canvas.setPointerCapture(e.pointerId)
     }
   }
@@ -616,9 +858,37 @@ export class GameEngine {
     this.dragPoint.copy(hit)
   }
 
+  /**
+   * Smart aiming: the finger projects onto a virtual plane; the cannon
+   * slides toward it and aims at it. Nearby obstacles magnetically snap
+   * the target onto their center (aim assist). The target is clamped to
+   * the tray interior so the aim direction stays stable.
+   */
   private updateAim() {
-    this.aimAngle = THREE.MathUtils.clamp(this.ndc.x * 1.15, -1.1, 1.1)
-    this.cannonGroup.rotation.y = -this.aimAngle
+    this.raycaster.setFromCamera(this.ndc, this.camera)
+    const hit = new THREE.Vector3()
+    if (!this.raycaster.ray.intersectPlane(this.aimPlane, hit)) return
+
+    const maxX = this.def.trayW / 2 + 0.9
+    hit.x = THREE.MathUtils.clamp(hit.x, -maxX, maxX)
+    // keep the target strictly in front of the cannon (inside the tray)
+    hit.z = THREE.MathUtils.clamp(hit.z, -this.def.trayD / 2, this.def.trayD / 2 - 0.3)
+    hit.y = AIM_PLANE_Y
+
+    // magnetic aim assist onto obstacles
+    this.aimTarget.copy(hit)
+    let best = 1.5
+    let snapped: ObstacleItem | null = null
+    for (const o of this.obstacles) {
+      const d = Math.hypot(o.body.position.x - hit.x, o.body.position.z - hit.z)
+      if (d < best) {
+        best = d
+        snapped = o
+      }
+    }
+    if (snapped) this.aimTarget.set(snapped.body.position.x, AIM_PLANE_Y, snapped.body.position.z)
+
+    this.cannonTargetX = THREE.MathUtils.clamp(this.aimTarget.x, -this.cannonRangeX, this.cannonRangeX)
   }
 
   // =============================================================== combat
@@ -626,6 +896,7 @@ export class GameEngine {
   private fire() {
     if (this.ball || this.shots <= 0 || this.won || this.lost) return
     this.shots--
+    this.shotsFired++
     this.lastShotTime = this.time
     this.cb.onShots(this.shots)
 
@@ -640,25 +911,28 @@ export class GameEngine {
     audio.shoot()
     this.buzz(25)
     this.shake = Math.max(this.shake, 0.14)
+    this.recoil = 1
 
     const dir = new THREE.Vector3(Math.sin(this.aimAngle), 0, -Math.cos(this.aimAngle))
+    const speed = SHOT_SPEED + Math.abs(this.aimAngle) * 1.5
     const spawn = new THREE.Vector3(
-      this.cannonPos.x + dir.x * 0.85,
+      this.cannonGroup.position.x + dir.x * 0.95,
       1.05,
-      this.cannonPos.z + dir.z * 0.85
+      this.cannonPos.z + dir.z * 0.95
     )
     const body = new CANNON.Body({
-      mass: 3.2,
-      shape: new CANNON.Sphere(0.26),
+      mass: 3.4,
+      shape: new CANNON.Sphere(0.28),
       position: new CANNON.Vec3(spawn.x, spawn.y, spawn.z),
       material: this.matBall,
     })
     body.linearDamping = 0.05
     body.angularDamping = 0.1
-    body.velocity.set(dir.x * (16.5 + Math.abs(this.aimAngle) * 2), 6.0, dir.z * (16.5 + Math.abs(this.aimAngle) * 2))
+    body.velocity.set(dir.x * speed, SHOT_VY, dir.z * speed)
     this.world.addBody(body)
 
     const skin = BALL_SKINS.find((s) => s.id === this.skinId) ?? BALL_SKINS[0]
+    this.lastBallColor = skin.color
     const mat = new THREE.MeshStandardMaterial({
       color: skin.color,
       roughness: skin.id === 'gold' ? 0.18 : 0.15,
@@ -666,9 +940,12 @@ export class GameEngine {
       emissive: skin.id === 'neon' ? new THREE.Color(skin.color) : new THREE.Color(0x000000),
       emissiveIntensity: skin.id === 'neon' ? 0.9 : 0,
     })
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.26, 20, 14), mat)
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.28, 20, 14), mat)
     mesh.castShadow = true
     this.scene.add(mesh)
+
+    // muzzle flash
+    this.fx.burst(spawn, '#ffd27a', 10, 3.4, 1.4)
 
     const ballItem: BallItem = {
       body,
@@ -684,8 +961,8 @@ export class GameEngine {
       const other = evt.body
       const obstacle = this.obstacles.find((o) => o.body.id === other.id && !o.dead)
       if (obstacle) {
-        const dmg = (v - 1.5) * (isBomb ? 5.5 : 3.0)
-        this.pendingHits.push({ obstacle, dmg: Math.max(4, dmg), point: body.position.clone(), bomb: false })
+        const dmg = (v - 1.2) * (isBomb ? 6.0 : 3.6)
+        this.pendingHits.push({ obstacle, dmg: Math.max(6, dmg), point: body.position.clone(), bomb: false })
       } else if (v > 4.5) {
         audio.thud()
       }
@@ -695,6 +972,7 @@ export class GameEngine {
     }
     body.addEventListener('collide', ballItem.onCollide)
     this.ball = ballItem
+    this.cb.onBallActive(true)
   }
 
   private removeBall(withFx: boolean) {
@@ -710,6 +988,7 @@ export class GameEngine {
     b.mesh.geometry.dispose()
     ;(b.mesh.material as THREE.Material).dispose()
     this.ball = null
+    this.cb.onBallActive(false)
   }
 
   private processHits() {
@@ -740,6 +1019,7 @@ export class GameEngine {
     if (o.dead || this.won) return
     o.hp -= dmg
     o.flash = 1
+    this.drawHpBar(o)
     audio.crack()
     this.fx.burst(new THREE.Vector3(from.x, Math.max(0.3, from.y), from.z), OBSTACLE_STYLE[o.kind].color, 8, 3, 1)
     if (o.hp <= 0) this.destroyObstacle(o)
@@ -819,8 +1099,9 @@ export class GameEngine {
       Math.max(a.body.position.y, b.body.position.y),
       (a.body.position.z + b.body.position.z) / 2
     )
-    const vx = (a.body.velocity.x + b.body.velocity.x) / 2
-    const vz = (a.body.velocity.z + b.body.velocity.z) / 2
+    // clamp inherited velocity so merged items never rocket through walls
+    const vx = THREE.MathUtils.clamp((a.body.velocity.x + b.body.velocity.x) / 2, -3.5, 3.5)
+    const vz = THREE.MathUtils.clamp((a.body.velocity.z + b.body.velocity.z) / 2, -3.5, 3.5)
     const tier = a.tier
     const color = TIERS[tier].color
     this.removeItem(a)
@@ -843,7 +1124,10 @@ export class GameEngine {
     }
 
     const newTier = tier + 1
-    const item = this.makeItem(newTier, mid.x, Math.max(0.9, mid.y), mid.z)
+    const r = this.itemRadius(newTier)
+    const sx = THREE.MathUtils.clamp(mid.x, -(this.def.trayW / 2 - r - 0.05), this.def.trayW / 2 - r - 0.05)
+    const sz = THREE.MathUtils.clamp(mid.z, -(this.def.trayD / 2 - r - 0.05), this.def.trayD / 2 - r - 0.05)
+    const item = this.makeItem(newTier, sx, Math.max(0.9, mid.y), sz)
     item.body.velocity.set(vx, 3.2, vz)
     item.born = this.time
 
@@ -930,12 +1214,18 @@ export class GameEngine {
     for (const c of counts.values()) if (c >= 2) pairs = true
     if (pairs || this.held || this.pendingPairs.size > 0) {
       this.stuckSince = 0
+      this.warnedStuck = false
       return
     }
     // for score goals, breaking obstacles still earns points
     if (this.def.goal.type === 'score' && this.obstacles.length > 0 && (this.shots > 0 || this.ball || this.bombArmed)) return
-    if (this.stuckSince === 0) this.stuckSince = this.time
-    else if (this.time - this.stuckSince > 2.2) this.lose('حرکت ممکنی نماند!')
+    if (this.stuckSince === 0) {
+      this.stuckSince = this.time
+      if (!this.warnedStuck) {
+        this.warnedStuck = true
+        this.fx.floatText('حرکت ممکنی نماند!', new THREE.Vector3(0, 2.4, 0), 'big')
+      }
+    } else if (this.time - this.stuckSince > 2.2) this.lose('حرکت ممکنی نماند!')
   }
 
   private lose(reason: string) {
@@ -976,10 +1266,42 @@ export class GameEngine {
       b.wakeUp()
     }
 
-    // sync meshes
+    // smart cannon: slide + smooth aim toward the target
+    const slide = Math.min(1, dt * 10)
+    this.cannonGroup.position.x += (this.cannonTargetX - this.cannonGroup.position.x) * slide
+    this.cannonGroup.position.y = Math.sin(this.time * 2.2) * 0.035
+    const dxT = this.aimTarget.x - this.cannonGroup.position.x
+    const dzT = this.aimTarget.z - this.cannonPos.z
+    const targetAngle = THREE.MathUtils.clamp(Math.atan2(dxT, -dzT), -MAX_AIM_ANGLE, MAX_AIM_ANGLE)
+    this.aimAngle += (targetAngle - this.aimAngle) * Math.min(1, dt * 12)
+    this.cannonGroup.rotation.y = -this.aimAngle
+    this.recoil = Math.max(0, this.recoil - dt * 5)
+    this.barrelGroup.position.z = this.recoil * 0.26
+
+    // sync meshes + keep everything inside the tray (anti-stuck safety net)
+    const halfW = this.def.trayW / 2
+    const halfD = this.def.trayD / 2
     for (const item of this.items.values()) {
-      item.mesh.position.set(item.body.position.x, item.body.position.y, item.body.position.z)
-      item.mesh.quaternion.set(item.body.quaternion.x, item.body.quaternion.y, item.body.quaternion.z, item.body.quaternion.w)
+      const b = item.body
+      // escaped the tray (tunneling / explosion fling): bring it back
+      if (
+        b.position.y < -2 ||
+        Math.abs(b.position.x) > halfW + 0.6 ||
+        b.position.z > halfD + 0.6 ||
+        b.position.z < -halfD - 0.6
+      ) {
+        const r2 = this.itemRadius(item.tier)
+        b.position.set(
+          THREE.MathUtils.clamp(b.position.x, -(halfW - r2 - 0.1), halfW - r2 - 0.1),
+          1.2,
+          THREE.MathUtils.clamp(b.position.z, -(halfD - r2 - 0.1), halfD - r2 - 0.1)
+        )
+        b.velocity.set(0, 0, 0)
+        b.angularVelocity.set(0, 0, 0)
+        b.wakeUp()
+      }
+      item.mesh.position.set(b.position.x, b.position.y, b.position.z)
+      item.mesh.quaternion.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w)
       const t = (this.time - item.born) / 0.28
       item.mesh.scale.setScalar(t < 1 ? Math.max(0.12, easeOutBack(Math.max(0, t))) : 1)
       if (item.tier === MAX_TIER) {
@@ -988,26 +1310,55 @@ export class GameEngine {
       }
     }
     for (const o of this.obstacles) {
-      o.mesh.position.set(o.body.position.x, o.body.position.y, o.body.position.z)
-      o.mesh.quaternion.set(o.body.quaternion.x, o.body.quaternion.y, o.body.quaternion.z, o.body.quaternion.w)
+      const b = o.body
+      // shoved past a wall line: pull it back inside so 'clear' goals stay solvable
+      if (b.position.y < -1 || Math.abs(b.position.x) > halfW + 0.2 || b.position.z > halfD || b.position.z < -halfD - 0.4) {
+        b.position.set(
+          THREE.MathUtils.clamp(b.position.x, -(halfW - o.w / 2 - 0.05), halfW - o.w / 2 - 0.05),
+          Math.max(b.position.y, o.h / 2 + 0.02),
+          THREE.MathUtils.clamp(b.position.z, -(halfD - o.d / 2 - 0.05), halfD - o.d / 2 - 0.05)
+        )
+        b.velocity.set(0, 0, 0)
+        b.angularVelocity.set(0, 0, 0)
+        b.wakeUp()
+      }
+      o.mesh.position.set(b.position.x, b.position.y, b.position.z)
+      o.mesh.quaternion.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w)
+      o.hpSprite.position.set(b.position.x, o.h + 0.55, b.position.z)
+      if (o.kind === 'crystal') {
+        ;(o.mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.28 + 0.14 * Math.sin(this.time * 3 + o.body.id)
+      }
       if (o.flash > 0) {
         o.flash = Math.max(0, o.flash - dt * 3)
         const ratio = 1 - o.hp / o.maxHp
-        ;(o.mesh.material as THREE.MeshStandardMaterial).emissive.setRGB(0.9 * o.flash + ratio * 0.25, 0.15 * o.flash, 0.05 * o.flash)
+        ;(o.mesh.material as THREE.MeshStandardMaterial).emissive.setRGB(
+          0.9 * o.flash + ratio * 0.22,
+          0.15 * o.flash,
+          0.05 * o.flash
+        )
       }
     }
+
+    // ball sync + trail
     if (this.ball) {
-      this.ball.mesh.position.set(this.ball.body.position.x, this.ball.body.position.y, this.ball.body.position.z)
-      this.ball.mesh.quaternion.set(
-        this.ball.body.quaternion.x,
-        this.ball.body.quaternion.y,
-        this.ball.body.quaternion.z,
-        this.ball.body.quaternion.w
-      )
-      const speed = this.ball.body.velocity.length()
-      if (speed < 0.8) this.ball.slowTime += dt
+      const bb = this.ball.body
+      this.ball.mesh.position.set(bb.position.x, bb.position.y, bb.position.z)
+      this.ball.mesh.quaternion.set(bb.quaternion.x, bb.quaternion.y, bb.quaternion.z, bb.quaternion.w)
+      const speed = bb.velocity.length()
+      this.trailTimer += dt
+      if (speed > 3 && this.trailTimer > 0.045) {
+        this.trailTimer = 0
+        this.fx.burst(
+          new THREE.Vector3(bb.position.x, bb.position.y, bb.position.z),
+          this.lastBallColor,
+          2,
+          0.5,
+          0.3
+        )
+      }
+      if (speed < 0.9) this.ball.slowTime += dt
       else this.ball.slowTime = 0
-      if (this.time - this.ball.born > 8 || this.ball.slowTime > 1.4) this.removeBall(true)
+      if (this.time - this.ball.born > 10 || this.ball.slowTime > 1.1) this.removeBall(true)
     }
 
     // combo expiry
@@ -1016,13 +1367,20 @@ export class GameEngine {
       this.cb.onCombo(0)
     }
 
-    // aim arrow visibility
+    // aim / trajectory / reticle
     this.canShoot = !this.ball && this.shots > 0 && !this.won && !this.lost
     this.aimArrow.visible = this.canShoot
     if (this.canShoot) {
       const child = this.aimArrow.children[0] as THREE.Mesh
       ;(child.material as THREE.MeshBasicMaterial).opacity = this.aiming ? 0.9 : 0.5 + 0.12 * Math.sin(this.time * 5)
+      this.updateTrajectory()
+    } else {
+      this.trajGroup.visible = false
+      this.reticle.visible = false
     }
+
+    // tutorial pulses & hints (level 1)
+    this.updateTutorial()
 
     // win / lose deferred callbacks
     if (this.won && !this.winFired && this.time - this.winAt > 1.15) {
@@ -1043,6 +1401,118 @@ export class GameEngine {
 
     this.fx.update(dt)
     this.render()
+  }
+
+  /**
+   * Simulates the exact shot physics for a dotted preview and shows a
+   * pulsing reticle on whatever the ball would smash (or the landing spot).
+   */
+  private updateTrajectory() {
+    const dir = new THREE.Vector3(Math.sin(this.aimAngle), 0, -Math.cos(this.aimAngle))
+    const speed = SHOT_SPEED + Math.abs(this.aimAngle) * 1.5
+    const pos = new THREE.Vector3(
+      this.cannonGroup.position.x + dir.x * 0.95,
+      1.05,
+      this.cannonPos.z + dir.z * 0.95
+    )
+    const vel = new THREE.Vector3(dir.x * speed, SHOT_VY, dir.z * speed)
+    const step = 1 / 40
+    const damp = Math.pow(1 - 0.05, step)
+    let impact: ObstacleItem | null = null
+    let dotIdx = 0
+
+    for (let t = 0; t < 2.4 && dotIdx < TRAJ_DOTS; t += step) {
+      vel.y -= GRAVITY * step
+      vel.multiplyScalar(damp)
+      pos.addScaledVector(vel, step)
+
+      // obstacle intersection (expanded AABB)
+      for (const o of this.obstacles) {
+        const hx = o.w / 2 + 0.15
+        const hy = o.h / 2 + 0.15
+        const hz = o.d / 2 + 0.15
+        if (
+          Math.abs(pos.x - o.body.position.x) < hx &&
+          Math.abs(pos.y - o.body.position.y) < hy &&
+          Math.abs(pos.z - o.body.position.z) < hz
+        ) {
+          impact = o
+          break
+        }
+      }
+      const outOfTray =
+        pos.y < 0.25 || Math.abs(pos.x) > this.def.trayW / 2 + 0.2 || pos.z < -this.def.trayD / 2 - 0.2
+      if (impact || outOfTray) break
+
+      const dot = this.trajDots[dotIdx]
+      dot.visible = true
+      dot.position.copy(pos)
+      dot.scale.setScalar(1 - (dotIdx / TRAJ_DOTS) * 0.55)
+      dotIdx++
+    }
+    for (let i = dotIdx; i < TRAJ_DOTS; i++) this.trajDots[i].visible = false
+    this.trajGroup.visible = true
+    this.trajMat.opacity = this.aiming ? 0.9 : 0.35
+
+    // reticle on the predicted impact
+    const rx = impact ? impact.body.position.x : THREE.MathUtils.clamp(pos.x, -this.def.trayW / 2, this.def.trayW / 2)
+    const rz = impact ? impact.body.position.z : THREE.MathUtils.clamp(pos.z, -this.def.trayD / 2, this.def.trayD / 2)
+    this.reticle.visible = true
+    this.reticle.position.set(rx, 0, rz)
+    const pulse = 1 + 0.12 * Math.sin(this.time * 6)
+    this.reticle.scale.setScalar(pulse)
+    this.reticle.rotation.y += 0.02
+    this.reticleMat.color.set(impact ? 0xf59e0b : 0xffffff)
+    this.reticleMat.opacity = (this.aiming ? 0.95 : 0.5) * pulse
+  }
+
+  /** Level-1 tutorial: pulsing rings under a same-tier pair + hints. */
+  private updateTutorial() {
+    // merge hint: rings under two tier-0 items until the first merge
+    if (this.levelIndex === 0 && this.time < this.tPulseUntil && this.score === 0) {
+      if (this.time >= this.tPulseNext) {
+        this.tPulseNext = this.time + 0.8
+        const two = [...this.items.values()].filter((i) => i.tier === 0).slice(0, 2)
+        for (const it of two) {
+          this.fx.ring(new THREE.Vector3(it.body.position.x, 0, it.body.position.z), '#ffffff', 1.5)
+        }
+      }
+      if (!this.tMergeHintShown && this.time > 1.1) {
+        this.tMergeHintShown = true
+        const first = [...this.items.values()].find((i) => i.tier === 0)
+        if (first) {
+          this.fx.floatText(
+            'دو شکل هم‌رنگ را بکش و روی هم بگذار',
+            new THREE.Vector3(first.body.position.x, 2.7, first.body.position.z),
+            'big'
+          )
+        }
+      }
+    }
+
+    // shooting hint: above the cannon until the first shot
+    if (this.levelIndex === 0 && this.shotsFired === 0 && this.tShotHintCount < 3 && this.time > this.tShotHintNext) {
+      this.tShotHintCount++
+      this.tShotHintNext = this.time + 6.5
+      this.fx.floatText(
+        'در نوار پایین بکش و رها کن تا شلیک شود!',
+        new THREE.Vector3(this.cannonGroup.position.x, 2.4, this.cannonPos.z - 1),
+        'big'
+      )
+    }
+
+    // obstacle hint: any level that has destructibles
+    if (this.def.obstacles.length > 0 && !this.clearHintShown && this.time > 1.5) {
+      this.clearHintShown = true
+      const o = this.obstacles[0]
+      if (o) {
+        this.fx.floatText(
+          'سدها را با توپخانه بشکن!',
+          new THREE.Vector3(o.body.position.x, o.h + 1.5, o.body.position.z),
+          'big'
+        )
+      }
+    }
   }
 
   private render() {
@@ -1089,8 +1559,13 @@ export class GameEngine {
     this.cb.onShots(this.shots)
   }
 
-  toggleBomb() {
+  /** Arm/disarm the bomb shot. Ignored when the player has no bombs. */
+  toggleBomb(hasBomb: boolean) {
     if (this.won || this.lost) return
+    if (!hasBomb) {
+      audio.click()
+      return
+    }
     this.bombArmed = !this.bombArmed
     this.cb.onBombArmed(this.bombArmed)
     audio.click()
@@ -1122,6 +1597,18 @@ export class GameEngine {
     this.fx.dispose()
     for (const g of this.tierGeos) g?.dispose()
     this.obstacleGeo.dispose()
+    this.woodTex.dispose()
+    this.stoneTex.dispose()
+    this.trajGroup.traverse((obj) => {
+      const mesh = obj as THREE.Mesh
+      if (mesh.isMesh) mesh.geometry.dispose()
+    })
+    this.trajMat.dispose()
+    this.reticle.traverse((obj) => {
+      const mesh = obj as THREE.Mesh
+      if (mesh.isMesh) mesh.geometry.dispose()
+    })
+    this.reticleMat.dispose()
     this.scene.traverse((obj) => {
       const mesh = obj as THREE.Mesh
       if (mesh.isMesh) {

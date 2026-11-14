@@ -61,10 +61,14 @@ export default function GameShell() {
       onGoal: (current, target) => useGameStore.getState().setGoalProgress(current, target),
       onBombArmed: (armed) => useGameStore.getState().setBombArmed(armed),
       onBombConsumed: () => useGameStore.getState().consumeBomb(),
+      onBallActive: (active) => useGameStore.getState().setBallActive(active),
       onWin: (score) => useGameStore.getState().finishWin(score),
       onLose: (reason) => useGameStore.getState().finishLose(reason),
     })
     engineRef.current = engine
+    if (process.env.NODE_ENV !== 'production') {
+      ;(window as unknown as { __ssEngine?: unknown }).__ssEngine = engine
+    }
     engine.applySettings(useGameStore.getState().settings)
     engine.applySkin(useGameStore.getState().items.skin)
     return () => {
@@ -100,15 +104,6 @@ export default function GameShell() {
   return (
     <div className="fixed inset-0 overflow-hidden bg-[#a8ecd9] font-sans">
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none" />
-
-      {/* shooting strip hint (touches pass through to the canvas) */}
-      {screen === 'game' && status === 'playing' && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[5] flex h-[16%] items-start justify-center border-t border-white/30 bg-white/10 pt-1.5">
-          <span className="rounded-full bg-white/45 px-3 py-0.5 text-[10px] font-bold text-teal-900/70">
-            ناحیه‌ی شلیک
-          </span>
-        </div>
-      )}
 
       {/* floating score / combo texts (3D-projected) */}
       <div ref={fxRef} className="pointer-events-none absolute inset-0 z-10 overflow-hidden" />

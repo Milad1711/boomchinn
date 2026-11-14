@@ -40,14 +40,14 @@ export interface SkinDef {
 }
 
 export const SHOP_ITEMS: ShopItemDef[] = [
-  { id: 'extraShot', name: 'شلیک اضافه', desc: 'یک توپ بیشتر در هر مرحله', price: 60 },
-  { id: 'bombShot', name: 'شلیک بمبی', desc: 'انفجار بزرگ‌تر و قوی‌تر', price: 100 },
+  { id: 'extraShot', name: 'شلیک اضافه', desc: 'یک توپ بیشتر در هر مرحله', price: 40 },
+  { id: 'bombShot', name: 'شلیک بمبی', desc: 'انفجار بزرگ‌تر و قوی‌تر', price: 70 },
 ]
 
 export const BALL_SKINS: SkinDef[] = [
   { id: 'classic', name: 'کلاسیک', price: 0, color: '#5eead4' },
-  { id: 'gold', name: 'طلایی', price: 300, color: '#fbbf24' },
-  { id: 'neon', name: 'نئون', price: 250, color: '#f472b6' },
+  { id: 'gold', name: 'طلایی', price: 200, color: '#fbbf24' },
+  { id: 'neon', name: 'نئون', price: 150, color: '#f472b6' },
 ]
 
 const SAVE_KEY = 'ss_save_v1'
@@ -85,6 +85,7 @@ interface GameStore extends SaveData {
   combo: number
   shots: number
   bombArmed: boolean
+  ballActive: boolean
   goalCurrent: number
   goalTarget: number
   loseReason: string | null
@@ -106,6 +107,7 @@ interface GameStore extends SaveData {
   setShots: (n: number) => void
   setGoalProgress: (current: number, target: number) => void
   setBombArmed: (armed: boolean) => void
+  setBallActive: (active: boolean) => void
   finishWin: (finalScore: number) => void
   finishLose: (reason: string) => void
 
@@ -183,7 +185,7 @@ function starsFor(score: number, thresholds: [number, number, number]): number {
 export const useGameStore = create<GameStore>((set, get) => ({
   hydrated: false,
   screen: 'menu',
-  coins: 100,
+  coins: 50,
   stars: {},
   items: DEFAULT_INVENTORY,
   settings: DEFAULT_SETTINGS,
@@ -195,6 +197,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   combo: 0,
   shots: 0,
   bombArmed: false,
+  ballActive: false,
   goalCurrent: 0,
   goalTarget: 1,
   loseReason: null,
@@ -221,6 +224,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       combo: 0,
       shots: def.shots,
       bombArmed: false,
+      ballActive: false,
       goalCurrent: 0,
       goalTarget,
       loseReason: null,
@@ -247,13 +251,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setShots: (n) => set({ shots: n }),
   setGoalProgress: (current, target) => set({ goalCurrent: current, goalTarget: target }),
   setBombArmed: (armed) => set({ bombArmed: armed }),
+  setBallActive: (active) => set({ ballActive: active }),
 
   finishWin: (finalScore) => {
     const state = get()
     if (state.status === 'won') return
     const def = LEVELS[state.currentLevel]
     const stars = starsFor(finalScore, def.starScores)
-    const earned = 12 * stars + Math.floor(finalScore / 50)
+    const earned = 6 * stars + Math.floor(finalScore / 100)
     const prev = state.stars[state.currentLevel] ?? 0
     set({
       status: 'won',
@@ -326,11 +331,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   resetProgress: () => {
     set({
-      coins: 100,
+      coins: 50,
       stars: {},
       items: DEFAULT_INVENTORY,
       settings: DEFAULT_SETTINGS,
     })
+    // also forget tutorial / contextual tips so they show again
+    try {
+      window.localStorage.removeItem('ss_tut_v1')
+      window.localStorage.removeItem('ss_tip_clear')
+      window.localStorage.removeItem('ss_tip_score')
+    } catch {
+      /* ignore */
+    }
     persist(get)
   },
 

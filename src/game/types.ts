@@ -84,7 +84,7 @@ export interface LevelDef {
 }
 
 export const OBSTACLE_STYLE: Record<ObstacleKind, { color: string; name: string }> = {
-  crate: { color: '#d9b38c', name: 'جعبه' },
-  crystal: { color: '#8fe8dc', name: 'بلور' },
+  crate: { color: '#c98d5a', name: 'جعبه' },
+  crystal: { color: '#7ee8ef', name: 'بلور' },
   stone: { color: '#9aa8a0', name: 'سنگ' },
 }
