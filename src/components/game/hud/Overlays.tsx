@@ -1,15 +1,27 @@
 'use client'
 
 /**
- * Full-screen game overlays (pause / win / lose).
+ * Full-screen game overlays (briefing / pause / win / lose).
  * GameShell conditionally mounts them; each one simply renders its content.
  */
 import type { ReactNode } from 'react'
 import { motion } from 'framer-motion'
-import { ChevronLeft, Coins, House, LayoutGrid, Music, Play, RotateCcw, Star, Volume2 } from 'lucide-react'
+import {
+  ChevronLeft,
+  Coins,
+  House,
+  LayoutGrid,
+  Lightbulb,
+  Music,
+  Play,
+  RotateCcw,
+  Star,
+  Target,
+  Volume2,
+} from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { useGameStore } from '@/lib/store'
-import { LEVELS } from '@/game/levels'
+import { LEVELS, goalText } from '@/game/levels'
 import { faNum } from '@/lib/format'
 
 const PRIMARY_BTN =
@@ -31,6 +43,51 @@ function OverlayShell({ children }: { children: ReactNode }) {
         className="flex w-full max-w-sm flex-col items-center gap-4 rounded-[2rem] bg-white/95 p-6 text-center shadow-2xl sm:p-8"
       >
         {children}
+      </motion.div>
+    </div>
+  )
+}
+
+export function BriefingOverlay() {
+  const currentLevel = useGameStore((s) => s.currentLevel)
+  const resume = useGameStore((s) => s.resume)
+  const quitToMenu = useGameStore((s) => s.quitToMenu)
+
+  const level = LEVELS[currentLevel] ?? LEVELS[0]
+
+  return (
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-teal-950/45 p-4 backdrop-blur-[3px]">
+      <motion.div
+        initial={{ scale: 0.85, opacity: 0, y: 24 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 24 }}
+        className="flex w-full max-w-sm flex-col items-center gap-4 rounded-[2rem] bg-white/95 p-6 text-center shadow-2xl sm:p-8"
+        role="dialog"
+        aria-label={`راهنمای مرحله‌ی ${faNum(currentLevel + 1)}`}
+      >
+        <p className="rounded-full bg-teal-100 px-4 py-1 text-sm font-black text-teal-700">
+          مرحله‌ی {faNum(currentLevel + 1)}
+        </p>
+        <h2 className="-mt-1 text-2xl font-black text-teal-900">{level.name}</h2>
+
+        <div className="flex w-full items-center gap-2.5 rounded-2xl bg-teal-50 px-4 py-3 text-start">
+          <Target className="h-5 w-5 shrink-0 text-teal-600" aria-hidden="true" />
+          <p className="text-sm font-extrabold leading-5 text-teal-900">هدف: {goalText(level.goal)}</p>
+        </div>
+
+        <div className="flex w-full items-center gap-2.5 rounded-2xl bg-amber-50 px-4 py-3 text-start ring-1 ring-amber-100">
+          <Lightbulb className="h-5 w-5 shrink-0 text-amber-500" aria-hidden="true" />
+          <p className="text-[13px] font-bold leading-5 text-teal-900">{level.guide}</p>
+        </div>
+
+        <button type="button" aria-label="شروع مرحله" onClick={() => resume()} className={PRIMARY_BTN}>
+          <Play className="h-5 w-5 fill-current" aria-hidden="true" />
+          شروع!
+        </button>
+        <button type="button" aria-label="بازگشت به فهرست مراحل" onClick={() => quitToMenu()} className={GHOST_BTN}>
+          <House className="h-4 w-4" aria-hidden="true" />
+          فهرست مراحل
+        </button>
       </motion.div>
     </div>
   )

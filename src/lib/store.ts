@@ -9,7 +9,7 @@ import { create } from 'zustand'
 import { LEVELS } from '@/game/levels'
 
 export type Screen = 'menu' | 'levels' | 'game' | 'settings' | 'shop'
-export type GameStatus = 'playing' | 'paused' | 'won' | 'lost'
+export type GameStatus = 'briefing' | 'playing' | 'paused' | 'won' | 'lost'
 
 export interface Settings {
   sfx: boolean
@@ -40,14 +40,14 @@ export interface SkinDef {
 }
 
 export const SHOP_ITEMS: ShopItemDef[] = [
-  { id: 'extraShot', name: 'شلیک اضافه', desc: 'یک توپ بیشتر در هر مرحله', price: 40 },
-  { id: 'bombShot', name: 'شلیک بمبی', desc: 'انفجار بزرگ‌تر و قوی‌تر', price: 70 },
+  { id: 'extraShot', name: 'موشک اضافه', desc: 'یک موشک بیشتر در هر مرحله', price: 30 },
+  { id: 'bombShot', name: 'موشک بمبی', desc: 'انفجار بزرگ‌تر و قوی‌تر', price: 55 },
 ]
 
 export const BALL_SKINS: SkinDef[] = [
-  { id: 'classic', name: 'کلاسیک', price: 0, color: '#5eead4' },
-  { id: 'gold', name: 'طلایی', price: 200, color: '#fbbf24' },
-  { id: 'neon', name: 'نئون', price: 150, color: '#f472b6' },
+  { id: 'classic', name: 'نارنجی', price: 0, color: '#f97316' },
+  { id: 'gold', name: 'طلایی', price: 150, color: '#fbbf24' },
+  { id: 'neon', name: 'نئون', price: 120, color: '#f472b6' },
 ]
 
 const SAVE_KEY = 'ss_save_v1'
@@ -219,7 +219,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       screen: 'game',
       currentLevel: index,
       runNonce: get().runNonce + 1,
-      status: 'playing',
+      status: 'briefing',
       score: 0,
       combo: 0,
       shots: def.shots,
@@ -244,7 +244,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   quitToMenu: () => set({ screen: 'menu', status: 'playing' }),
 
   pause: () => set((s) => (s.status === 'playing' ? { status: 'paused' } : {})),
-  resume: () => set((s) => (s.status === 'paused' ? { status: 'playing' } : {})),
+  resume: () => set((s) => (s.status === 'paused' || s.status === 'briefing' ? { status: 'playing' } : {})),
 
   addScore: (delta) => set((s) => ({ score: s.score + delta })),
   setCombo: (c) => set({ combo: c }),
@@ -258,7 +258,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (state.status === 'won') return
     const def = LEVELS[state.currentLevel]
     const stars = starsFor(finalScore, def.starScores)
-    const earned = 6 * stars + Math.floor(finalScore / 100)
+    // gentle economy: coins stay scarce so the shop matters
+    const earned = 2 * stars + Math.floor(finalScore / 300)
     const prev = state.stars[state.currentLevel] ?? 0
     set({
       status: 'won',

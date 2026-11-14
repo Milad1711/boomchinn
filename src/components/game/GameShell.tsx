@@ -15,7 +15,7 @@ import LevelSelect from '@/components/game/screens/LevelSelect'
 import SettingsScreen from '@/components/game/screens/SettingsScreen'
 import Shop from '@/components/game/screens/Shop'
 import Hud from '@/components/game/hud/Hud'
-import { LoseOverlay, PauseOverlay, WinOverlay } from '@/components/game/hud/Overlays'
+import { LoseOverlay, PauseOverlay, WinOverlay, BriefingOverlay } from '@/components/game/hud/Overlays'
 
 export default function GameShell() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -109,6 +109,7 @@ export default function GameShell() {
       <div ref={fxRef} className="pointer-events-none absolute inset-0 z-10 overflow-hidden" />
 
       {screen === 'game' && <Hud />}
+      {screen === 'game' && status === 'briefing' && <BriefingOverlay />}
       {screen === 'game' && status === 'paused' && <PauseOverlay />}
       {screen === 'game' && status === 'won' && <WinOverlay />}
       {screen === 'game' && status === 'lost' && <LoseOverlay />}
