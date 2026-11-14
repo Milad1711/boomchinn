@@ -1,5 +1,5 @@
 /**
- * STACK & SMASH - Global game store (Zustand).
+ * بوم چین (STACK & SMASH) - Global game store (Zustand).
  * Holds screens, player progress (coins/stars/inventory), settings and
  * the live in-level HUD state pushed by the 3D engine.
  *
@@ -43,6 +43,25 @@ export const SHOP_ITEMS: ShopItemDef[] = [
   { id: 'extraShot', name: 'موشک اضافه', desc: 'یک موشک بیشتر در هر مرحله', price: 30 },
   { id: 'bombShot', name: 'موشک بمبی', desc: 'انفجار بزرگ‌تر و قوی‌تر', price: 55 },
 ]
+
+/** Simulated in-app coin packages (4 tiers, Toman prices). */
+export interface CoinPack {
+  id: string
+  name: string
+  coins: number
+  priceToman: number
+  tag?: string
+}
+
+export const COIN_PACKS: CoinPack[] = [
+  { id: 'pack_s', name: 'بسته‌ی کوچک', coins: 500, priceToman: 9000 },
+  { id: 'pack_m', name: 'بسته‌ی متوسط', coins: 3000, priceToman: 49000, tag: '+۱۰٪ جایزه' },
+  { id: 'pack_l', name: 'بسته‌ی بزرگ', coins: 8500, priceToman: 129000, tag: '+۲۰٪ جایزه' },
+  { id: 'pack_xl', name: 'بسته‌ی ویژه', coins: 18000, priceToman: 249000, tag: 'بهترین ارزش' },
+]
+
+/** Price of buying one extra missile instantly during a level. */
+export const COINS_PER_SHOT = 12
 
 export const BALL_SKINS: SkinDef[] = [
   { id: 'classic', name: 'نارنجی', price: 0, color: '#f97316' },
@@ -117,6 +136,8 @@ interface GameStore extends SaveData {
   equipSkin: (id: string) => void
   useExtraShot: () => boolean
   consumeBomb: () => void
+  buyShotNow: () => boolean
+  buyCoinPack: (id: string) => boolean
 
   // settings / data
   toggleSetting: (key: keyof Settings) => void
@@ -323,6 +344,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (state.items.bombShot <= 0) return
     set({ items: { ...state.items, bombShot: state.items.bombShot - 1 } })
     persist(get)
+  },
+
+  /** Instantly buy one extra missile during a level (HUD button). */
+  buyShotNow: () => {
+    const state = get()
+    if (state.coins < COINS_PER_SHOT) return false
+    set({ coins: state.coins - COINS_PER_SHOT, shots: state.shots + 1 })
+    persist(get)
+    return true
+  },
+
+  /** Simulated in-app purchase of a coin package. */
+  buyCoinPack: (id) => {
+    const pack = COIN_PACKS.find((p) => p.id === id)
+    if (!pack) return false
+    set({ coins: get().coins + pack.coins })
+    persist(get)
+    return true
   },
 
   toggleSetting: (key) => {

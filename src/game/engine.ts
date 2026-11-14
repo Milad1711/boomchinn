@@ -1,5 +1,5 @@
 /**
- * STACK & SMASH - 3D game engine.
+ * بوم چین (STACK & SMASH) - 3D game engine.
  * Three.js (render) + cannon-es (physics).
  *
  * Systems:

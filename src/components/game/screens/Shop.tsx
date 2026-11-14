@@ -1,17 +1,42 @@
 'use client'
 
 /**
- * Shop screen — helper items and ball skins, paid with coins.
+ * Shop screen — coin packages (simulated IAP), helper items and ball skins.
  */
+import { useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { ArrowRight, Bomb, CirclePlus, Coins } from 'lucide-react'
-import { BALL_SKINS, SHOP_ITEMS, useGameStore, type ShopItemDef, type SkinDef } from '@/lib/store'
+import { ArrowRight, BadgePercent, Bomb, CirclePlus, Coins, Gem, ShoppingBag, Sparkles, Star } from 'lucide-react'
+import {
+  BALL_SKINS,
+  COIN_PACKS,
+  SHOP_ITEMS,
+  useGameStore,
+  type CoinPack,
+  type ShopItemDef,
+  type SkinDef,
+} from '@/lib/store'
 import { faNum } from '@/lib/format'
 import { useToast } from '@/hooks/use-toast'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 
 const ITEM_ICONS: Record<ShopItemDef['id'], LucideIcon> = {
   extraShot: CirclePlus,
   bombShot: Bomb,
+}
+
+const PACK_ICONS: Record<string, LucideIcon> = {
+  pack_s: Coins,
+  pack_m: Star,
+  pack_l: Gem,
+  pack_xl: ShoppingBag,
+}
+
+const PACK_CARD: Record<string, string> = {
+  pack_s: 'from-amber-50 to-white ring-amber-100',
+  pack_m: 'from-teal-50 to-white ring-teal-100',
+  pack_l: 'from-fuchsia-50 to-white ring-fuchsia-100',
+  pack_xl: 'from-rose-50 to-white ring-rose-200',
 }
 
 const SCROLLBAR =
@@ -22,9 +47,22 @@ export default function Shop() {
   const items = useGameStore((s) => s.items)
   const buyItem = useGameStore((s) => s.buyItem)
   const buySkin = useGameStore((s) => s.buySkin)
+  const buyCoinPack = useGameStore((s) => s.buyCoinPack)
   const equipSkin = useGameStore((s) => s.equipSkin)
   const setScreen = useGameStore((s) => s.setScreen)
   const { toast } = useToast()
+
+  const [selectedPack, setSelectedPack] = useState<CoinPack | null>(null)
+
+  const confirmPackPurchase = () => {
+    if (!selectedPack) return
+    buyCoinPack(selectedPack.id)
+    toast({
+      title: 'خرید انجام شد!',
+      description: `${faNum(selectedPack.coins)} سکه به حساب شما اضافه شد.`,
+    })
+    setSelectedPack(null)
+  }
 
   const handleBuyItem = (item: ShopItemDef) => {
     const ok = buyItem(item.id)
@@ -66,6 +104,51 @@ export default function Shop() {
       {/* Content */}
       <div className={`flex-1 overflow-y-auto game-scroll ${SCROLLBAR}`}>
         <div className="mx-auto w-full max-w-3xl space-y-7 px-4 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-2">
+          {/* Coin packages (simulated IAP) */}
+          <section aria-labelledby="shop-packs-title">
+            <h2 id="shop-packs-title" className="mb-3 text-lg font-black text-teal-900">
+              بسته‌های سکه
+            </h2>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {COIN_PACKS.map((pack) => {
+                const Icon = PACK_ICONS[pack.id] ?? Coins
+                return (
+                  <div
+                    key={pack.id}
+                    className={`relative flex items-center gap-3 rounded-3xl bg-gradient-to-bl p-4 shadow-md ring-1 ${PACK_CARD[pack.id] ?? 'from-white to-white ring-teal-100'}`}
+                  >
+                    {pack.tag ? (
+                      <span className="absolute -top-2.5 start-4 flex items-center gap-1 rounded-full bg-rose-500 px-2.5 py-0.5 text-[10px] font-black text-white shadow">
+                        <BadgePercent className="h-3 w-3" aria-hidden="true" />
+                        {pack.tag}
+                      </span>
+                    ) : null}
+                    <span className="shrink-0 rounded-2xl bg-amber-100 p-3 text-amber-600">
+                      <Icon className="h-7 w-7" aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-extrabold text-teal-900">{pack.name}</p>
+                      <p className="flex items-center gap-1 text-lg font-black text-amber-600">
+                        <Coins className="h-4 w-4" aria-hidden="true" />
+                        {faNum(pack.coins)}
+                        <span className="text-xs font-bold text-teal-700">سکه</span>
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label={`خرید ${pack.name} به قیمت ${faNum(pack.priceToman)} تومان`}
+                      onClick={() => setSelectedPack(pack)}
+                      className="flex h-11 shrink-0 flex-col items-center justify-center rounded-2xl bg-teal-600 px-3 leading-tight font-black text-white shadow-sm transition-all hover:bg-teal-700 active:scale-95"
+                    >
+                      <span className="text-[13px]">{faNum(pack.priceToman)}</span>
+                      <span className="text-[9px] font-bold opacity-80">تومان</span>
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+
           {/* Helper items */}
           <section aria-labelledby="shop-items-title">
             <h2 id="shop-items-title" className="mb-3 text-lg font-black text-teal-900">
@@ -162,6 +245,47 @@ export default function Shop() {
           </section>
         </div>
       </div>
+
+      {/* Simulated purchase confirmation */}
+      <Dialog open={selectedPack !== null} onOpenChange={(open) => !open && setSelectedPack(null)}>
+        <DialogContent className="max-w-xs rounded-[1.75rem] sm:max-w-sm" showCloseButton={false}>
+          {selectedPack && (
+            <>
+              <DialogHeader className="items-center text-center">
+                <span className="mx-auto mb-1 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+                  <Sparkles className="h-7 w-7" aria-hidden="true" />
+                </span>
+                <DialogTitle className="text-xl font-black text-teal-900">{selectedPack.name}</DialogTitle>
+                <DialogDescription className="text-sm font-bold leading-6 text-teal-700">
+                  {faNum(selectedPack.coins)} سکه بابت {faNum(selectedPack.priceToman)} تومان
+                </DialogDescription>
+              </DialogHeader>
+              <p className="rounded-2xl bg-amber-50 px-4 py-2.5 text-center text-xs font-bold text-amber-700">
+                این یک خرید نمایشی است؛ با تأیید، سکه‌ها فوراً اضافه می‌شوند.
+              </p>
+              <div className="flex w-full flex-col gap-2">
+                <Button
+                  type="button"
+                  aria-label="تأیید خرید نمایشی"
+                  onClick={confirmPackPurchase}
+                  className="h-12 w-full rounded-2xl bg-emerald-500 text-base font-black text-white hover:bg-emerald-600"
+                >
+                  تأیید خرید
+                </Button>
+                <Button
+                  type="button"
+                  aria-label="انصراف از خرید"
+                  variant="ghost"
+                  onClick={() => setSelectedPack(null)}
+                  className="h-10 w-full rounded-2xl font-bold text-teal-700 hover:text-teal-900"
+                >
+                  انصراف
+                </Button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * STACK & SMASH - Game shell.
+ * بوم چین (STACK & SMASH) - Game shell.
  * Hosts the WebGL canvas, the floaty-FX layer, all screens and the
  * engine lifecycle. Single-route game shell (mobile-first).
  */

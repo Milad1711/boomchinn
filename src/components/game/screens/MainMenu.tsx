@@ -82,7 +82,7 @@ export default function MainMenu() {
         <div className="drop-shadow-[0_18px_20px_rgba(13,148,136,0.25)]">
           {logoOk ? (
             <Image
-              src="/logo.png"
+              src="/logo-boomchin.png"
               width={240}
               height={240}
               alt="لوگوی بازی"
@@ -98,9 +98,7 @@ export default function MainMenu() {
         </div>
 
         <div className="text-center">
-          <h1 dir="ltr" className="text-4xl font-black tracking-wide text-teal-900 drop-shadow-sm sm:text-5xl">
-            {'STACK & SMASH'}
-          </h1>
+          <h1 className="text-5xl font-black tracking-wide text-teal-900 drop-shadow-sm sm:text-6xl">بوم چین</h1>
           <p className="mt-1 text-lg font-bold text-teal-800/80">بچین، ادغام کن، بشکن!</p>
         </div>
 
@@ -137,7 +135,7 @@ export default function MainMenu() {
 
       {/* Footnote */}
       <p className="pointer-events-none absolute inset-x-0 bottom-0 z-10 pb-[calc(env(safe-area-inset-bottom)+1rem)] text-center text-xs font-bold text-teal-800/60">
-        نسخه ۱.۰.۰ — ساخته‌شده با Three.js
+        نسخه ۲.۰.۰ — بیش از ۱۰۰ مرحله — ساخته‌شده با Three.js
       </p>
     </div>
   )

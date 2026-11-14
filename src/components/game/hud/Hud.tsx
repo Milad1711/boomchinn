@@ -10,8 +10,8 @@
  */
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Bomb, CirclePlus, Crosshair, Hand, Lightbulb, Pause, Sparkles, Target, X } from 'lucide-react'
-import { useGameStore } from '@/lib/store'
+import { Bomb, CirclePlus, Coins, Crosshair, Hand, Lightbulb, Pause, Sparkles, Target, X } from 'lucide-react'
+import { COINS_PER_SHOT, useGameStore } from '@/lib/store'
 import { engineRef } from '@/game/engineRef'
 import { LEVELS, goalText } from '@/game/levels'
 import { faNum } from '@/lib/format'
@@ -96,6 +96,7 @@ export default function Hud() {
   const score = useGameStore((s) => s.score)
   const combo = useGameStore((s) => s.combo)
   const shots = useGameStore((s) => s.shots)
+  const coins = useGameStore((s) => s.coins)
   const goalCurrent = useGameStore((s) => s.goalCurrent)
   const goalTarget = useGameStore((s) => s.goalTarget)
   const bombArmed = useGameStore((s) => s.bombArmed)
@@ -260,6 +261,28 @@ export default function Hud() {
             <CirclePlus className="h-6 w-6" aria-hidden="true" />
             <span className="absolute -top-1 -end-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-teal-600 px-1 text-[10px] font-black text-white">
               {faNum(inventory.extraShot)}
+            </span>
+          </button>
+
+          {/* Instant missile purchase with coins */}
+          <button
+            type="button"
+            aria-label={`خرید فوری یک موشک با ${faNum(COINS_PER_SHOT)} سکه`}
+            disabled={coins < COINS_PER_SHOT}
+            onClick={() => {
+              const ok = useGameStore.getState().buyShotNow()
+              if (ok) engineRef.current?.grantShot()
+            }}
+            className={`pointer-events-auto relative flex h-14 w-14 items-center justify-center rounded-full bg-amber-400 text-amber-950 shadow-lg transition-all hover:bg-amber-500 active:scale-90 ${
+              coins < COINS_PER_SHOT ? 'opacity-40' : ''
+            } disabled:cursor-not-allowed`}
+          >
+            <Coins className="h-6 w-6" aria-hidden="true" />
+            <span className="absolute -top-1 -end-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-teal-600 px-1 text-[10px] font-black text-white">
+              +{faNum(1)}
+            </span>
+            <span className="absolute -bottom-1.5 rounded-full bg-white/95 px-1.5 text-[10px] font-black text-amber-700 shadow-sm">
+              {faNum(COINS_PER_SHOT)}
             </span>
           </button>
         </div>

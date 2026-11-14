@@ -9,10 +9,10 @@ const vazir = Vazirmatn({
 });
 
 export const metadata: Metadata = {
-  title: "STACK & SMASH — بچین، ادغام کن، بشکن!",
+  title: "بوم چین — بچین، ادغام کن، بشکن!",
   description:
-    "بازی موبایلی معما و فیزیک: اشیای هم‌شکل را ادغام کن، با توپ مکانیکی موانع را بشکن و ستاره جمع کن.",
-  applicationName: "STACK & SMASH",
+    "بازی موبایلی معما و فیزیک: اشیای هم‌شکل را ادغام کن، با توپ مکانیکی موانع را بشکن و در بیش از ۱۰۰ مرحله ستاره جمع کن.",
+  applicationName: "بوم چین",
 };
 
 export const viewport: Viewport = {
