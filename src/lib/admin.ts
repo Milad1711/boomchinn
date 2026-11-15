@@ -1,51 +1,91 @@
 /**
- * Server-side admin authentication.
+ * Server-side admin authentication — password based.
  *
- * The admin signs in with a secret "device id" (ADMIN_DEVICE_ID env var).
- * Every admin API call must carry it in the `x-admin-device` header so the
- * server re-validates on each request (no trusted client session).
+ * - The very first password is the ADMIN_PASSWORD environment variable (with
+ *   a built-in fallback so local dev works with zero configuration).
+ * - While that initial password is still in use, the panel forces the admin
+ *   to change it; the new password is stored hashed (scrypt + random salt)
+ *   in the AdminSetting table of the game database.
+ * - Every admin API call must carry the current password in the
+ *   `x-admin-password` header, so the server re-validates on each request.
  */
+import crypto from 'crypto'
+import { db, ensureSchema } from '@/lib/db'
 
-const HEADER = 'x-admin-device'
+export const ADMIN_HEADER = 'x-admin-password'
 
-/** Parse the configured admin id(s) — supports one id or a comma-separated list. */
-function configuredAdminIds(): string[] {
-  const raw = process.env.ADMIN_DEVICE_ID ?? ''
-  return raw
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
+/** Initial password — used until the admin changes it (UI enforces that). */
+function defaultAdminPassword(): string {
+  return (process.env.ADMIN_PASSWORD ?? 'boomchin-1404').trim()
 }
 
-/** Optional admin password — lets the owner sign in from any device. */
-function configuredAdminPassword(): string {
-  return (process.env.ADMIN_PASSWORD ?? '').trim()
+/* --------------------------------------------------------------- hashing */
+
+function hashPassword(password: string, salt = crypto.randomBytes(16).toString('hex')): string {
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex')
+  return `${salt}:${hash}`
 }
 
-/** Constant-time-ish equality for short strings (avoid trivial timing leaks). */
-function safeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false
-  let diff = 0
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
-  return diff === 0
+function verifyPassword(password: string, stored: string): boolean {
+  const [salt, hash] = stored.split(':')
+  if (!salt || !hash) return false
+  const candidate = crypto.scryptSync(password, salt, 64)
+  const expected = Buffer.from(hash, 'hex')
+  if (candidate.length !== expected.length) return false
+  return crypto.timingSafeEqual(candidate, expected)
 }
 
-/**
- * True when the given credential matches a configured admin id or the
- * admin password (ADMIN_DEVICE_ID / ADMIN_PASSWORD env vars).
- */
-export function isAdminDevice(device: unknown): boolean {
-  if (typeof device !== 'string' || device.length === 0 || device.length > 128) return false
-  const ids = configuredAdminIds()
-  if (ids.some((id) => safeEqual(device, id))) return true
-  const pass = configuredAdminPassword()
-  return pass.length > 0 && safeEqual(device, pass)
+/* ---------------------------------------------------------- stored state */
+
+interface StoredRow {
+  value: string
 }
 
-/** Extract + validate the admin header from a request. */
-export function adminFromRequest(req: Request): string | null {
-  const device = req.headers.get(HEADER)
-  return isAdminDevice(device) ? (device as string) : null
+/** Reads the hashed custom password from the DB (null while still default). */
+async function storedHash(): Promise<string | null> {
+  await ensureSchema()
+  const rows = await db.$queryRawUnsafe<StoredRow[]>(
+    `SELECT "value" FROM "AdminSetting" WHERE "key" = 'admin_password' LIMIT 1`
+  )
+  return rows[0]?.value ?? null
+}
+
+/* ---------------------------------------------------------------- checks */
+
+/** True when the request carries a valid admin password header. */
+export async function isAdminRequest(req: Request): Promise<boolean> {
+  const pw = req.headers.get(ADMIN_HEADER)
+  if (!pw || pw.length === 0 || pw.length > 128) return false
+  const hash = await storedHash()
+  return hash ? verifyPassword(pw, hash) : pw === defaultAdminPassword()
+}
+
+/** Sign-in check. mustChange is true while the initial password is in use. */
+export async function adminLogin(password: string): Promise<{ ok: boolean; mustChange: boolean }> {
+  const hash = await storedHash()
+  if (hash) return { ok: verifyPassword(password, hash), mustChange: false }
+  return { ok: password === defaultAdminPassword(), mustChange: true }
+}
+
+/** Validates the current password, then stores the new one hashed. */
+export async function adminChangePassword(
+  current: string,
+  next: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (next.length < 4) return { ok: false, error: 'رمز جدید باید حداقل ۴ کاراکتر باشد' }
+  if (next.length > 128) return { ok: false, error: 'رمز جدید خیلی بلند است' }
+  const hash = await storedHash()
+  const currentValid = hash ? verifyPassword(current, hash) : current === defaultAdminPassword()
+  if (!currentValid) return { ok: false, error: 'رمز فعلی اشتباه است' }
+  if (hash && verifyPassword(next, hash)) {
+    return { ok: false, error: 'رمز جدید باید با رمز فعلی متفاوت باشد' }
+  }
+  await db.$executeRawUnsafe(
+    `INSERT INTO "AdminSetting" ("key", "value") VALUES ('admin_password', ?)
+     ON CONFLICT("key") DO UPDATE SET "value" = "excluded"."value"`,
+    hashPassword(next)
+  )
+  return { ok: true }
 }
 
 /** Standard 401 response for unauthorized admin calls. */

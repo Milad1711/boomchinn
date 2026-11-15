@@ -1,8 +1,10 @@
 'use client'
 
 /**
- * Admin panel — credential gated screen.
- * Login: paste the admin device id OR the admin password (server-validated on every call).
+ * Admin panel — password gated screen.
+ * Login: the admin password only (no device id needed). While the initial
+ * ADMIN_PASSWORD is still in use, the panel forces a password change right
+ * after the first sign-in; the new password is stored hashed on the server.
  * Powers: browse/search every player, gift coins from the list, or quick-gift
  * any amount to any device id directly.
  */
@@ -11,6 +13,8 @@ import type { LucideIcon } from 'lucide-react'
 import {
   ArrowRight,
   Coins,
+  Eye,
+  EyeOff,
   Gift,
   Hash,
   KeyRound,
@@ -18,6 +22,7 @@ import {
   LogOut,
   RefreshCw,
   Search,
+  ShieldCheck,
   Star,
   UserRound,
   Users,
@@ -72,13 +77,25 @@ function shortId(id: string): string {
 }
 
 export default function AdminPanel() {
-  const adminDevice = useGameStore((s) => s.adminDevice)
-  const setAdminDevice = useGameStore((s) => s.setAdminDevice)
-  const clearAdminDevice = useGameStore((s) => s.clearAdminDevice)
+  const adminPassword = useGameStore((s) => s.adminPassword)
+  const setAdminPassword = useGameStore((s) => s.setAdminPassword)
+  const clearAdminPassword = useGameStore((s) => s.clearAdminPassword)
   const setScreen = useGameStore((s) => s.setScreen)
   const { toast } = useToast()
 
-  const [deviceInput, setDeviceInput] = useState('')
+  // login state
+  const [passInput, setPassInput] = useState('')
+  const [showPass, setShowPass] = useState(false)
+  const [loggingIn, setLoggingIn] = useState(false)
+  const [loginError, setLoginError] = useState<string | null>(null)
+
+  // forced first-login password change
+  const [needsChange, setNeedsChange] = useState(false)
+  const [newPw, setNewPw] = useState('')
+  const [newPw2, setNewPw2] = useState('')
+  const [changing, setChanging] = useState(false)
+
+  // panel data
   const [data, setData] = useState<AdminData | null>(null)
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
@@ -93,16 +110,23 @@ export default function AdminPanel() {
   const [quickRaw, setQuickRaw] = useState('')
   const [quickBusy, setQuickBusy] = useState(false)
 
+  // optional change-password dialog (from inside the panel)
+  const [pwDialog, setPwDialog] = useState(false)
+  const [pwCur, setPwCur] = useState('')
+  const [pwNew, setPwNew] = useState('')
+  const [pwNew2, setPwNew2] = useState('')
+  const [pwBusy, setPwBusy] = useState(false)
+
   const giftAmount = parseAmount(giftRaw)
   const quickAmount = parseAmount(quickRaw)
 
-  /** Fetch users. 'unauthorized' means the device id was rejected by the server. */
+  /** Fetch users. 'unauthorized' means the password was rejected by the server. */
   const load = useCallback(
-    async (device: string, q = '') => {
+    async (password: string, q = '') => {
       setLoading(true)
       try {
         const res = await fetch(`/api/admin/users?q=${encodeURIComponent(q)}`, {
-          headers: { 'x-admin-device': device },
+          headers: { 'x-admin-password': password },
         })
         if (res.status === 401) return 'unauthorized' as const
         if (!res.ok) throw new Error('bad status')
@@ -120,21 +144,22 @@ export default function AdminPanel() {
 
   /**
    * Single load effect: (re)fetches when the session changes, and debounces
-   * free-text search. A rejected id clears the session back to the login form.
+   * free-text search. A rejected password clears the session back to login.
    */
   useEffect(() => {
-    if (!adminDevice) {
-      setData(null)
+    if (!adminPassword || needsChange) {
+      if (!adminPassword) setData(null)
       return
     }
     let cancelled = false
     const t = setTimeout(
       async () => {
-        const res = await load(adminDevice, query)
+        const res = await load(adminPassword, query)
         if (cancelled) return
         if (res === 'unauthorized') {
-          clearAdminDevice()
-          toast({ title: 'شناسه یا رمز مدیر معتبر نیست', variant: 'destructive' })
+          clearAdminPassword()
+          setLoginError('رمز مدیر معتبر نیست — دوباره وارد شوید')
+          toast({ title: 'رمز مدیر معتبر نیست', variant: 'destructive' })
         }
       },
       query ? 300 : 0
@@ -143,22 +168,89 @@ export default function AdminPanel() {
       cancelled = true
       clearTimeout(t)
     }
-  }, [adminDevice, query, load, clearAdminDevice, toast])
+  }, [adminPassword, needsChange, query, load, clearAdminPassword, toast])
 
-  const signIn = () => {
-    const device = deviceInput.trim()
-    if (!device) return
-    // the load effect validates it; on failure we are sent back here
-    setAdminDevice(device)
+  /** Sign in with the admin password only. */
+  const signIn = async () => {
+    const password = passInput.trim()
+    if (!password || loggingIn) return
+    setLoggingIn(true)
+    setLoginError(null)
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      })
+      const json = (await res.json().catch(() => null)) as
+        | { ok: true; mustChange: boolean }
+        | { ok?: false; error?: string }
+        | null
+      if (res.ok && json && 'ok' in json && json.ok) {
+        setAdminPassword(password)
+        if (json.mustChange) {
+          setNeedsChange(true)
+          setNewPw('')
+          setNewPw2('')
+        }
+      } else {
+        setLoginError((json && 'error' in json && json.error) || 'رمز مدیر اشتباه است')
+      }
+    } catch {
+      setLoginError('ارتباط با سرور برقرار نشد')
+    } finally {
+      setLoggingIn(false)
+    }
+  }
+
+  /** Change the password (forced after first login, or optional from panel). */
+  const changePassword = async (current: string, next: string): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/admin/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: current, newPassword: next }),
+      })
+      const json = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null
+      if (res.ok && json?.ok) return true
+      const message = json?.error ?? 'تغییر رمز ناموفق بود'
+      toast({ title: message, variant: 'destructive' })
+      return false
+    } catch {
+      toast({ title: 'ارتباط با سرور برقرار نشد', variant: 'destructive' })
+      return false
+    }
+  }
+
+  /** Forced change right after the first sign-in. */
+  const submitForcedChange = async () => {
+    if (!adminPassword || changing) return
+    if (newPw.trim().length < 4) {
+      toast({ title: 'رمز جدید باید حداقل ۴ کاراکتر باشد', variant: 'destructive' })
+      return
+    }
+    if (newPw.trim() !== newPw2.trim()) {
+      toast({ title: 'تکرار رمز جدید مطابقت ندارد', variant: 'destructive' })
+      return
+    }
+    setChanging(true)
+    const ok = await changePassword(adminPassword, newPw.trim())
+    setChanging(false)
+    if (ok) {
+      setAdminPassword(newPw.trim())
+      setNeedsChange(false)
+      setPassInput('')
+      toast({ title: 'رمز مدیر با موفقیت تغییر کرد' })
+    }
   }
 
   const sendGift = async () => {
-    if (!adminDevice || !giftUser || !giftAmount) return
+    if (!adminPassword || !giftUser || !giftAmount) return
     setGifting(true)
     try {
       const res = await fetch('/api/admin/gift', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-device': adminDevice },
+        headers: { 'Content-Type': 'application/json', 'x-admin-password': adminPassword },
         body: JSON.stringify({ playerId: giftUser.id, coins: giftAmount }),
       })
       const json = (await res.json().catch(() => null)) as
@@ -200,7 +292,7 @@ export default function AdminPanel() {
 
   /** Quick gift: send coins straight to a pasted device id. */
   const sendQuickGift = async () => {
-    if (!adminDevice || !quickAmount) return
+    if (!adminPassword || !quickAmount) return
     const targetId = quickId.trim()
     if (!targetId || targetId.length > 64) {
       toast({ title: 'شناسه دستگاه را کامل وارد کنید', variant: 'destructive' })
@@ -210,7 +302,7 @@ export default function AdminPanel() {
     try {
       const res = await fetch('/api/admin/gift', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-device': adminDevice },
+        headers: { 'Content-Type': 'application/json', 'x-admin-password': adminPassword },
         body: JSON.stringify({ playerId: targetId, coins: quickAmount }),
       })
       if (res.status === 404) {
@@ -218,7 +310,8 @@ export default function AdminPanel() {
         return
       }
       if (res.status === 401) {
-        clearAdminDevice()
+        clearAdminPassword()
+        setLoginError('رمز مدیر معتبر نیست — دوباره وارد شوید')
         toast({ title: 'جلسه مدیر منقضی شد — دوباره وارد شوید', variant: 'destructive' })
         return
       }
@@ -232,7 +325,7 @@ export default function AdminPanel() {
         })
         setQuickId('')
         setQuickRaw('')
-        void load(adminDevice, query) // refresh list/stats
+        void load(adminPassword, query) // refresh list/stats
       } else {
         toast({
           title: (json && 'error' in json && json.error) || 'ارسال هدیه ناموفق بود',
@@ -246,8 +339,71 @@ export default function AdminPanel() {
     }
   }
 
+  // ------------------------------------------------- forced change screen
+  if (adminPassword && needsChange) {
+    return (
+      <div className="fixed inset-0 flex flex-col overflow-hidden bg-gradient-to-b from-[#d9f7ea] via-[#a8ecd9] to-[#7fe0d4]">
+        <Header
+          onBack={() => {
+            // going back cancels the session — the next visit asks again
+            clearAdminPassword()
+            setNeedsChange(false)
+            setPassInput('')
+            setScreen('settings')
+          }}
+          title="تغییر رمز مدیر"
+        />
+        <div className="flex flex-1 items-center justify-center px-4 pb-10">
+          <section
+            aria-label="تغییر اجباری رمز مدیر"
+            className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-md"
+          >
+            <div className="mb-4 flex flex-col items-center gap-2 text-center">
+              <span className="rounded-3xl bg-amber-100 p-4 text-amber-600">
+                <ShieldCheck className="h-8 w-8" aria-hidden="true" />
+              </span>
+              <h2 className="text-xl font-black text-teal-900">رمز جدید انتخاب کنید</h2>
+              <p className="text-sm font-bold leading-6 text-teal-700/80">
+                این اولین ورود شماست. برای امنیت بیشتر، ابتدا رمز مدیر را عوض کنید.
+              </p>
+            </div>
+            <div className="space-y-3">
+              <PasswordInput
+                value={newPw}
+                onChange={setNewPw}
+                onEnter={() => void submitForcedChange()}
+                placeholder="رمز جدید (حداقل ۴ کاراکتر)"
+                label="رمز جدید"
+              />
+              <PasswordInput
+                value={newPw2}
+                onChange={setNewPw2}
+                onEnter={() => void submitForcedChange()}
+                placeholder="تکرار رمز جدید"
+                label="تکرار رمز جدید"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => void submitForcedChange()}
+              disabled={changing || newPw.trim().length < 4 || !newPw2.trim()}
+              className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-3xl border-b-4 border-teal-700 bg-teal-600 font-black text-white shadow-lg transition-all hover:bg-teal-700 active:translate-y-1 active:border-b-0 disabled:opacity-50"
+            >
+              {changing ? (
+                <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+              ) : (
+                <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+              )}
+              ثبت رمز جدید
+            </button>
+          </section>
+        </div>
+      </div>
+    )
+  }
+
   // ------------------------------------------------------------ login screen
-  if (!adminDevice) {
+  if (!adminPassword) {
     return (
       <div className="fixed inset-0 flex flex-col overflow-hidden bg-gradient-to-b from-[#d9f7ea] via-[#a8ecd9] to-[#7fe0d4]">
         <Header onBack={() => setScreen('settings')} title="پنل مدیریت" />
@@ -262,25 +418,32 @@ export default function AdminPanel() {
               </span>
               <h2 className="text-xl font-black text-teal-900">ورود مدیر</h2>
               <p className="text-sm font-bold leading-6 text-teal-700/80">
-                شناسه‌ی دستگاه مدیر یا رمز مدیر را وارد کنید تا به پنل دسترسی پیدا کنید.
+                فقط رمز مدیر را وارد کنید. در اولین ورود از شما خواسته می‌شود رمز را عوض کنید.
               </p>
             </div>
-            <Input
-              dir="ltr"
-              value={deviceInput}
-              onChange={(e) => setDeviceInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && signIn()}
-              placeholder="شناسه دستگاه یا رمز مدیر"
-              aria-label="شناسه دستگاه یا رمز مدیر"
-              className="h-12 rounded-2xl border-teal-100 bg-teal-50/60 text-left font-mono text-sm text-teal-900 placeholder:font-sans placeholder:text-teal-700/40 focus-visible:ring-teal-400"
+            <PasswordInput
+              value={passInput}
+              onChange={(v) => {
+                setPassInput(v)
+                setLoginError(null)
+              }}
+              onEnter={() => void signIn()}
+              placeholder="رمز مدیر"
+              label="رمز مدیر"
             />
+            <p
+              className="mt-2 min-h-5 px-1 text-center text-xs font-bold text-red-500"
+              aria-live="polite"
+            >
+              {loginError ?? ''}
+            </p>
             <button
               type="button"
-              onClick={signIn}
-              disabled={!deviceInput.trim()}
-              className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-3xl border-b-4 border-teal-700 bg-teal-600 font-black text-white shadow-lg transition-all hover:bg-teal-700 active:translate-y-1 active:border-b-0 disabled:opacity-50"
+              onClick={() => void signIn()}
+              disabled={!passInput.trim() || loggingIn}
+              className="mt-1 flex h-12 w-full items-center justify-center gap-2 rounded-3xl border-b-4 border-teal-700 bg-teal-600 font-black text-white shadow-lg transition-all hover:bg-teal-700 active:translate-y-1 active:border-b-0 disabled:opacity-50"
             >
-              {loading ? (
+              {loggingIn ? (
                 <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
               ) : (
                 <KeyRound className="h-5 w-5" aria-hidden="true" />
@@ -300,18 +463,34 @@ export default function AdminPanel() {
         onBack={() => setScreen('settings')}
         title="پنل مدیریت"
         action={
-          <button
-            type="button"
-            aria-label="خروج از پنل مدیریت"
-            onClick={() => {
-              clearAdminDevice()
-              setDeviceInput('')
-              toast({ title: 'از پنل مدیریت خارج شدید' })
-            }}
-            className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/85 text-red-500 shadow transition-all hover:bg-white active:scale-95"
-          >
-            <LogOut className="h-5 w-5" aria-hidden="true" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              aria-label="تغییر رمز مدیر"
+              onClick={() => {
+                setPwCur('')
+                setPwNew('')
+                setPwNew2('')
+                setPwDialog(true)
+              }}
+              className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/85 text-teal-700 shadow transition-all hover:bg-white active:scale-95"
+            >
+              <KeyRound className="h-5 w-5" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              aria-label="خروج از پنل مدیریت"
+              onClick={() => {
+                clearAdminPassword()
+                setPassInput('')
+                setLoginError(null)
+                toast({ title: 'از پنل مدیریت خارج شدید' })
+              }}
+              className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/85 text-red-500 shadow transition-all hover:bg-white active:scale-95"
+            >
+              <LogOut className="h-5 w-5" aria-hidden="true" />
+            </button>
+          </div>
         }
       />
 
@@ -404,7 +583,7 @@ export default function AdminPanel() {
               <button
                 type="button"
                 aria-label="به‌روزرسانی لیست"
-                onClick={() => void load(adminDevice, query)}
+                onClick={() => void load(adminPassword, query)}
                 className="flex h-8 w-8 items-center justify-center rounded-xl text-teal-600 transition hover:bg-teal-50 active:scale-90"
               >
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
@@ -551,6 +730,127 @@ export default function AdminPanel() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Change password dialog (optional, from inside the panel) */}
+      <Dialog open={pwDialog} onOpenChange={setPwDialog}>
+        <DialogContent className="max-w-sm rounded-3xl border-teal-100 p-6">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-black text-teal-900">تغییر رمز مدیر</DialogTitle>
+            <DialogDescription className="font-bold text-teal-700">
+              رمز فعلی را وارد کنید و یک رمز جدید انتخاب کنید.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <PasswordInput
+              value={pwCur}
+              onChange={setPwCur}
+              onEnter={() => undefined}
+              placeholder="رمز فعلی"
+              label="رمز فعلی"
+            />
+            <PasswordInput
+              value={pwNew}
+              onChange={setPwNew}
+              onEnter={() => undefined}
+              placeholder="رمز جدید (حداقل ۴ کاراکتر)"
+              label="رمز جدید"
+            />
+            <PasswordInput
+              value={pwNew2}
+              onChange={setPwNew2}
+              onEnter={() => undefined}
+              placeholder="تکرار رمز جدید"
+              label="تکرار رمز جدید"
+            />
+          </div>
+
+          <DialogFooter className="gap-2">
+            <button
+              type="button"
+              onClick={() => setPwDialog(false)}
+              className="h-11 flex-1 rounded-2xl border border-teal-100 bg-teal-50 font-extrabold text-teal-800 transition hover:bg-teal-100 active:scale-95"
+            >
+              انصراف
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                if (!adminPassword || pwBusy) return
+                if (pwNew.trim().length < 4) {
+                  toast({ title: 'رمز جدید باید حداقل ۴ کاراکتر باشد', variant: 'destructive' })
+                  return
+                }
+                if (pwNew.trim() !== pwNew2.trim()) {
+                  toast({ title: 'تکرار رمز جدید مطابقت ندارد', variant: 'destructive' })
+                  return
+                }
+                setPwBusy(true)
+                const ok = await changePassword(pwCur.trim(), pwNew.trim())
+                setPwBusy(false)
+                if (ok) {
+                  setAdminPassword(pwNew.trim())
+                  setPwDialog(false)
+                  toast({ title: 'رمز مدیر با موفقیت تغییر کرد' })
+                }
+              }}
+              disabled={pwBusy || !pwCur.trim() || pwNew.trim().length < 4 || !pwNew2.trim()}
+              className="flex h-11 flex-1 items-center justify-center gap-2 rounded-2xl border-b-4 border-teal-700 bg-teal-600 font-black text-white shadow transition-all hover:bg-teal-700 active:translate-y-0.5 active:border-b-0 disabled:opacity-50"
+            >
+              {pwBusy ? (
+                <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+              ) : (
+                <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+              )}
+              ثبت رمز
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+/** Password input with a show/hide toggle. */
+function PasswordInput({
+  value,
+  onChange,
+  onEnter,
+  placeholder,
+  label,
+}: {
+  value: string
+  onChange: (v: string) => void
+  onEnter: () => void
+  placeholder: string
+  label: string
+}) {
+  const [show, setShow] = useState(false)
+  return (
+    <div className="relative">
+      <Input
+        dir="ltr"
+        type={show ? 'text' : 'password'}
+        autoComplete="off"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && onEnter()}
+        placeholder={placeholder}
+        aria-label={label}
+        className="h-12 rounded-2xl border-teal-100 bg-teal-50/60 pl-11 text-left font-mono text-sm text-teal-900 placeholder:font-sans placeholder:text-teal-700/40 focus-visible:ring-teal-400"
+      />
+      <button
+        type="button"
+        aria-label={show ? 'پنهان کردن رمز' : 'نمایش رمز'}
+        onClick={() => setShow((s) => !s)}
+        className="absolute end-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-xl text-teal-500 transition hover:bg-teal-100 active:scale-90"
+      >
+        {show ? (
+          <EyeOff className="h-4 w-4" aria-hidden="true" />
+        ) : (
+          <Eye className="h-4 w-4" aria-hidden="true" />
+        )}
+      </button>
     </div>
   )
 }

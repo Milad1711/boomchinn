@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, ensureSchema } from '@/lib/db'
-import { adminFromRequest, adminUnauthorized } from '@/lib/admin'
+import { isAdminRequest, adminUnauthorized } from '@/lib/admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,12 +26,12 @@ function sumStars(json: string): number {
 
 /**
  * GET /api/admin/users
- * Headers: x-admin-device
+ * Headers: x-admin-password
  * Query: q (optional search in name / device id)
  * Returns all players (newest first) + aggregate stats for the admin panel.
  */
 export async function GET(req: NextRequest) {
-  if (!adminFromRequest(req)) return adminUnauthorized()
+  if (!(await isAdminRequest(req))) return adminUnauthorized()
 
   const q = (req.nextUrl.searchParams.get('q') ?? '').trim().toLowerCase()
 

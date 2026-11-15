@@ -38,7 +38,7 @@ const ROWS: SettingRow[] = [
 export default function SettingsScreen() {
   const settings = useGameStore((s) => s.settings)
   const name = useGameStore((s) => s.name)
-  const adminDevice = useGameStore((s) => s.adminDevice)
+  const adminPassword = useGameStore((s) => s.adminPassword)
   const toggleSetting = useGameStore((s) => s.toggleSetting)
   const resetProgress = useGameStore((s) => s.resetProgress)
   const setScreen = useGameStore((s) => s.setScreen)
@@ -152,24 +152,24 @@ export default function SettingsScreen() {
             </div>
             <p className="text-[11px] font-bold leading-5 text-teal-700/60">
               این شناسه هویت دستگاه شما در جدول رقابت است؛ مدیر می‌تواند با همین شناسه به شما
-              سکه هدیه دهد. ورود مدیر با شناسه دستگاه یا رمز مدیر انجام می‌شود.
+              سکه هدیه دهد. ورود مدیر فقط با رمز مدیر انجام می‌شود.
             </p>
             <button
               type="button"
-              aria-label={adminDevice ? 'ورود به پنل مدیریت' : 'ورود مدیر'}
+              aria-label={adminPassword ? 'ورود به پنل مدیریت' : 'ورود مدیر'}
               onClick={() => setScreen('admin')}
               className={`flex h-12 w-full items-center justify-center gap-2 rounded-3xl border-b-4 font-black text-white shadow-lg transition-all active:translate-y-1 active:border-b-0 ${
-                adminDevice
+                adminPassword
                   ? 'border-teal-700 bg-teal-600 hover:bg-teal-700'
                   : 'border-teal-800/60 bg-teal-800 hover:bg-teal-900'
               }`}
             >
-              {adminDevice ? (
+              {adminPassword ? (
                 <ShieldCheck className="h-5 w-5" aria-hidden="true" />
               ) : (
                 <KeyRound className="h-5 w-5" aria-hidden="true" />
               )}
-              {adminDevice ? 'پنل مدیریت' : 'ورود مدیر'}
+              {adminPassword ? 'پنل مدیریت' : 'ورود مدیر'}
             </button>
           </section>
 

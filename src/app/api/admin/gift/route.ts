@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { db, ensureSchema } from '@/lib/db'
-import { adminFromRequest, adminUnauthorized } from '@/lib/admin'
+import { isAdminRequest, adminUnauthorized } from '@/lib/admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,11 +15,11 @@ const MAX_GIFT = 10_000_000
 
 /**
  * POST /api/admin/gift
- * Headers: x-admin-device
+ * Headers: x-admin-password
  * Body: { playerId, coins } — adds `coins` (1..10,000,000) to the player.
  */
 export async function POST(req: NextRequest) {
-  if (!adminFromRequest(req)) return adminUnauthorized()
+  if (!(await isAdminRequest(req))) return adminUnauthorized()
 
   const body = (await req.json().catch(() => null)) as GiftBody | null
   const playerId = body?.playerId

@@ -71,7 +71,7 @@ export const BALL_SKINS: SkinDef[] = [
 
 const SAVE_KEY = 'ss_save_v1'
 const PID_KEY = 'ss_pid_v1'
-const ADMIN_KEY = 'ss_admin_v1'
+const ADMIN_KEY = 'ss_admin_pw_v1'
 
 /** Max display-name length (code points). */
 export const NAME_MAX = 20
@@ -119,10 +119,10 @@ interface GameStore extends SaveData {
   // navigation / flow
   setScreen: (s: Screen) => void
 
-  // admin panel (device-id session, server re-validates on every call)
-  adminDevice: string | null
-  setAdminDevice: (device: string) => void
-  clearAdminDevice: () => void
+  // admin panel (password session, server re-validates on every call)
+  adminPassword: string | null
+  setAdminPassword: (password: string) => void
+  clearAdminPassword: () => void
   startLevel: (index: number) => void
   restartLevel: () => void
   nextLevel: () => void
@@ -251,17 +251,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   setScreen: (s) => set({ screen: s }),
 
-  adminDevice: null,
-  setAdminDevice: (device) => {
-    set({ adminDevice: device })
+  adminPassword: null,
+  setAdminPassword: (password) => {
+    set({ adminPassword: password })
     try {
-      window.localStorage.setItem(ADMIN_KEY, device)
+      window.localStorage.setItem(ADMIN_KEY, password)
     } catch {
       /* ignore */
     }
   },
-  clearAdminDevice: () => {
-    set({ adminDevice: null })
+  clearAdminPassword: () => {
+    set({ adminPassword: null })
     try {
       window.localStorage.removeItem(ADMIN_KEY)
     } catch {
@@ -447,7 +447,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // restore admin session before anything else (cheap, synchronous)
     try {
       const admin = window.localStorage.getItem(ADMIN_KEY)
-      if (admin) set({ adminDevice: admin })
+      if (admin) set({ adminPassword: admin })
     } catch {
       /* ignore */
     }

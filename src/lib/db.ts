@@ -63,6 +63,10 @@ const BOOTSTRAP_SQL = [
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS "AdminSetting" (
+    "key" TEXT NOT NULL PRIMARY KEY,
+    "value" TEXT NOT NULL
+  )`,
 ]
 
 const globalForSchema = globalThis as unknown as {
