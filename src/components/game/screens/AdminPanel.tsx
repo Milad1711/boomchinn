@@ -1,9 +1,10 @@
 'use client'
 
 /**
- * Admin panel — device-id gated screen.
- * Login: paste the secret admin device id (validated server-side on every call).
- * Powers: browse/search every player, gift any amount of coins to any player.
+ * Admin panel — credential gated screen.
+ * Login: paste the admin device id OR the admin password (server-validated on every call).
+ * Powers: browse/search every player, gift coins from the list, or quick-gift
+ * any amount to any device id directly.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
@@ -11,6 +12,7 @@ import {
   ArrowRight,
   Coins,
   Gift,
+  Hash,
   KeyRound,
   Loader2,
   LogOut,
@@ -86,7 +88,13 @@ export default function AdminPanel() {
   const [giftRaw, setGiftRaw] = useState('')
   const [gifting, setGifting] = useState(false)
 
+  // quick gift by device-id state
+  const [quickId, setQuickId] = useState('')
+  const [quickRaw, setQuickRaw] = useState('')
+  const [quickBusy, setQuickBusy] = useState(false)
+
   const giftAmount = parseAmount(giftRaw)
+  const quickAmount = parseAmount(quickRaw)
 
   /** Fetch users. 'unauthorized' means the device id was rejected by the server. */
   const load = useCallback(
@@ -126,7 +134,7 @@ export default function AdminPanel() {
         if (cancelled) return
         if (res === 'unauthorized') {
           clearAdminDevice()
-          toast({ title: 'شناسه‌ی دستگاه معتبر نیست', variant: 'destructive' })
+          toast({ title: 'شناسه یا رمز مدیر معتبر نیست', variant: 'destructive' })
         }
       },
       query ? 300 : 0
@@ -190,6 +198,54 @@ export default function AdminPanel() {
 
   const filteredCount = useMemo(() => data?.users.length ?? 0, [data])
 
+  /** Quick gift: send coins straight to a pasted device id. */
+  const sendQuickGift = async () => {
+    if (!adminDevice || !quickAmount) return
+    const targetId = quickId.trim()
+    if (!targetId || targetId.length > 64) {
+      toast({ title: 'شناسه دستگاه را کامل وارد کنید', variant: 'destructive' })
+      return
+    }
+    setQuickBusy(true)
+    try {
+      const res = await fetch('/api/admin/gift', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-device': adminDevice },
+        body: JSON.stringify({ playerId: targetId, coins: quickAmount }),
+      })
+      if (res.status === 404) {
+        toast({ title: 'بازیکنی با این شناسه پیدا نشد', variant: 'destructive' })
+        return
+      }
+      if (res.status === 401) {
+        clearAdminDevice()
+        toast({ title: 'جلسه مدیر منقضی شد — دوباره وارد شوید', variant: 'destructive' })
+        return
+      }
+      const json = (await res.json().catch(() => null)) as
+        | { ok: true; player: { id: string; name: string; coins: number }; gifted: number }
+        | { ok?: false; error?: string }
+        | null
+      if (res.ok && json && 'ok' in json && json.ok) {
+        toast({
+          title: `${faNum(json.gifted)} سکه به «${json.player.name || 'بی‌نام'}» هدیه داده شد — موجودی جدید: ${faNum(json.player.coins)}`,
+        })
+        setQuickId('')
+        setQuickRaw('')
+        void load(adminDevice, query) // refresh list/stats
+      } else {
+        toast({
+          title: (json && 'error' in json && json.error) || 'ارسال هدیه ناموفق بود',
+          variant: 'destructive',
+        })
+      }
+    } catch {
+      toast({ title: 'ارتباط با سرور برقرار نشد', variant: 'destructive' })
+    } finally {
+      setQuickBusy(false)
+    }
+  }
+
   // ------------------------------------------------------------ login screen
   if (!adminDevice) {
     return (
@@ -206,7 +262,7 @@ export default function AdminPanel() {
               </span>
               <h2 className="text-xl font-black text-teal-900">ورود مدیر</h2>
               <p className="text-sm font-bold leading-6 text-teal-700/80">
-                شناسه‌ی دستگاه مدیر را وارد کنید تا به پنل دسترسی پیدا کنید.
+                شناسه‌ی دستگاه مدیر یا رمز مدیر را وارد کنید تا به پنل دسترسی پیدا کنید.
               </p>
             </div>
             <Input
@@ -214,9 +270,9 @@ export default function AdminPanel() {
               value={deviceInput}
               onChange={(e) => setDeviceInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && signIn()}
-              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-              aria-label="شناسه دستگاه مدیر"
-              className="h-12 rounded-2xl border-teal-100 bg-teal-50/60 text-left font-mono text-sm text-teal-900 placeholder:text-teal-700/40 focus-visible:ring-teal-400"
+              placeholder="شناسه دستگاه یا رمز مدیر"
+              aria-label="شناسه دستگاه یا رمز مدیر"
+              className="h-12 rounded-2xl border-teal-100 bg-teal-50/60 text-left font-mono text-sm text-teal-900 placeholder:font-sans placeholder:text-teal-700/40 focus-visible:ring-teal-400"
             />
             <button
               type="button"
@@ -284,6 +340,60 @@ export default function AdminPanel() {
               className="h-12 rounded-2xl border-teal-100 bg-white ps-10 font-bold text-teal-900 shadow-sm placeholder:text-teal-700/40 focus-visible:ring-teal-400"
             />
           </div>
+
+          {/* Quick gift by device id */}
+          <section
+            aria-label="هدیه سریع با شناسه دستگاه"
+            className="w-full rounded-3xl bg-white p-4 shadow-md"
+          >
+            <div className="mb-3 flex items-center gap-2 px-1">
+              <span className="rounded-xl bg-amber-100 p-1.5 text-amber-600">
+                <Hash className="h-4 w-4" aria-hidden="true" />
+              </span>
+              <p className="text-xs font-black text-teal-500">هدیه سریع با شناسه دستگاه</p>
+            </div>
+            <div className="space-y-2.5">
+              <Input
+                dir="ltr"
+                value={quickId}
+                onChange={(e) => setQuickId(e.target.value)}
+                placeholder="شناسه دستگاه بازیکن (کپی از تنظیمات بازی او)"
+                aria-label="شناسه دستگاه بازیکن"
+                className="h-11 rounded-2xl border-teal-100 bg-teal-50/60 text-left font-mono text-xs text-teal-900 placeholder:font-sans placeholder:text-teal-700/40 focus-visible:ring-teal-400"
+              />
+              <div className="flex gap-2.5">
+                <Input
+                  dir="ltr"
+                  inputMode="numeric"
+                  value={quickRaw}
+                  onChange={(e) => setQuickRaw(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && quickAmount && void sendQuickGift()}
+                  placeholder="مثلاً 10000"
+                  aria-label="مقدار سکه برای هدیه سریع"
+                  className="h-11 flex-1 rounded-2xl border-teal-100 bg-teal-50/60 text-center font-black text-teal-900 placeholder:font-bold placeholder:text-teal-700/40 focus-visible:ring-teal-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => void sendQuickGift()}
+                  disabled={!quickAmount || !quickId.trim() || quickBusy}
+                  aria-label="ارسال هدیه سریع"
+                  className="flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-2xl border-b-[3px] border-amber-600 bg-amber-400 px-4 text-sm font-black text-amber-950 shadow transition-all hover:bg-amber-300 active:translate-y-0.5 active:border-b-0 disabled:opacity-50"
+                >
+                  {quickBusy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Gift className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  هدیه
+                </button>
+              </div>
+              <p className="text-center text-[11px] font-bold text-teal-700/60" aria-live="polite">
+                {quickAmount
+                  ? `${faNum(quickAmount)} سکه به موجودی بازیکن اضافه می‌شود`
+                  : 'مقدار سکه را وارد کنید'}
+              </p>
+            </div>
+          </section>
 
           {/* User list */}
           <section aria-label="لیست بازیکن‌ها" className="w-full rounded-3xl bg-white p-4 shadow-md">

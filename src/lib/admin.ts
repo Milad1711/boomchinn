@@ -17,6 +17,11 @@ function configuredAdminIds(): string[] {
     .filter(Boolean)
 }
 
+/** Optional admin password — lets the owner sign in from any device. */
+function configuredAdminPassword(): string {
+  return (process.env.ADMIN_PASSWORD ?? '').trim()
+}
+
 /** Constant-time-ish equality for short strings (avoid trivial timing leaks). */
 function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false
@@ -25,12 +30,16 @@ function safeEqual(a: string, b: string): boolean {
   return diff === 0
 }
 
-/** True when the given device id matches the configured admin id(s). */
+/**
+ * True when the given credential matches a configured admin id or the
+ * admin password (ADMIN_DEVICE_ID / ADMIN_PASSWORD env vars).
+ */
 export function isAdminDevice(device: unknown): boolean {
   if (typeof device !== 'string' || device.length === 0 || device.length > 128) return false
   const ids = configuredAdminIds()
-  if (ids.length === 0) return false
-  return ids.some((id) => safeEqual(device, id))
+  if (ids.some((id) => safeEqual(device, id))) return true
+  const pass = configuredAdminPassword()
+  return pass.length > 0 && safeEqual(device, pass)
 }
 
 /** Extract + validate the admin header from a request. */
