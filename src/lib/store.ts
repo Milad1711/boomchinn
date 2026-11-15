@@ -8,7 +8,7 @@
 import { create } from 'zustand'
 import { LEVELS } from '@/game/levels'
 
-export type Screen = 'menu' | 'levels' | 'game' | 'settings' | 'shop' | 'ranks'
+export type Screen = 'menu' | 'levels' | 'game' | 'settings' | 'shop' | 'ranks' | 'admin'
 export type GameStatus = 'briefing' | 'playing' | 'paused' | 'won' | 'lost'
 
 export interface Settings {
@@ -71,6 +71,7 @@ export const BALL_SKINS: SkinDef[] = [
 
 const SAVE_KEY = 'ss_save_v1'
 const PID_KEY = 'ss_pid_v1'
+const ADMIN_KEY = 'ss_admin_v1'
 
 /** Max display-name length (code points). */
 export const NAME_MAX = 20
@@ -117,6 +118,11 @@ interface GameStore extends SaveData {
 
   // navigation / flow
   setScreen: (s: Screen) => void
+
+  // admin panel (device-id session, server re-validates on every call)
+  adminDevice: string | null
+  setAdminDevice: (device: string) => void
+  clearAdminDevice: () => void
   startLevel: (index: number) => void
   restartLevel: () => void
   nextLevel: () => void
@@ -244,6 +250,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
   earnedCoins: 0,
 
   setScreen: (s) => set({ screen: s }),
+
+  adminDevice: null,
+  setAdminDevice: (device) => {
+    set({ adminDevice: device })
+    try {
+      window.localStorage.setItem(ADMIN_KEY, device)
+    } catch {
+      /* ignore */
+    }
+  },
+  clearAdminDevice: () => {
+    set({ adminDevice: null })
+    try {
+      window.localStorage.removeItem(ADMIN_KEY)
+    } catch {
+      /* ignore */
+    }
+  },
 
   startLevel: (index) => {
     const def = LEVELS[index]
@@ -420,6 +444,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   hydrate: async () => {
+    // restore admin session before anything else (cheap, synchronous)
+    try {
+      const admin = window.localStorage.getItem(ADMIN_KEY)
+      if (admin) set({ adminDevice: admin })
+    } catch {
+      /* ignore */
+    }
     const local = readLocalSave()
     // apply local save immediately (fast path)
     set({

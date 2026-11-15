@@ -14,7 +14,9 @@ import LevelSelect from '@/components/game/screens/LevelSelect'
 import SettingsScreen from '@/components/game/screens/SettingsScreen'
 import Shop from '@/components/game/screens/Shop'
 import Leaderboard from '@/components/game/screens/Leaderboard'
+import AdminPanel from '@/components/game/screens/AdminPanel'
 import Hud from '@/components/game/hud/Hud'
+import { Toaster } from '@/components/ui/toaster'
 import { LoseOverlay, PauseOverlay, WinOverlay, BriefingOverlay } from '@/components/game/hud/Overlays'
 
 export default function GameShell() {
@@ -100,6 +102,10 @@ export default function GameShell() {
       {screen === 'settings' && <SettingsScreen />}
       {screen === 'shop' && <Shop />}
       {screen === 'ranks' && <Leaderboard />}
+      {screen === 'admin' && <AdminPanel />}
+
+      {/* app-wide toast notifications */}
+      <Toaster />
     </div>
   )
 }

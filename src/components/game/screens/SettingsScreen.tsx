@@ -5,7 +5,7 @@
  */
 import { useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { ArrowRight, Pencil, SunMedium, Trash2, UserRound, Vibrate, Volume2 } from 'lucide-react'
+import { ArrowRight, Copy, KeyRound, Pencil, ShieldCheck, SunMedium, Trash2, UserRound, Vibrate, Volume2 } from 'lucide-react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,7 +18,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { Switch } from '@/components/ui/switch'
-import { useGameStore, type Settings } from '@/lib/store'
+import { useGameStore, getPlayerId, type Settings } from '@/lib/store'
 import { useToast } from '@/hooks/use-toast'
 import NameDialog from './NameDialog'
 
@@ -38,11 +38,13 @@ const ROWS: SettingRow[] = [
 export default function SettingsScreen() {
   const settings = useGameStore((s) => s.settings)
   const name = useGameStore((s) => s.name)
+  const adminDevice = useGameStore((s) => s.adminDevice)
   const toggleSetting = useGameStore((s) => s.toggleSetting)
   const resetProgress = useGameStore((s) => s.resetProgress)
   const setScreen = useGameStore((s) => s.setScreen)
   const { toast } = useToast()
   const [nameOpen, setNameOpen] = useState(false)
+  const [deviceId] = useState(() => getPlayerId())
 
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden bg-gradient-to-b from-[#d9f7ea] via-[#a8ecd9] to-[#7fe0d4]">
@@ -117,6 +119,58 @@ export default function SettingsScreen() {
                 </div>
               )
             })}
+          </section>
+
+          {/* Device id + admin card */}
+          <section
+            aria-label="شناسه دستگاه و مدیریت"
+            className="w-full space-y-3 rounded-3xl bg-white p-6 shadow-md"
+          >
+            <p className="text-xs font-black text-teal-500">شناسه دستگاه</p>
+            <div className="flex items-center gap-2">
+              <code
+                dir="ltr"
+                className="min-w-0 flex-1 truncate rounded-2xl bg-teal-50 px-3 py-2.5 text-left font-mono text-xs text-teal-800"
+              >
+                {deviceId}
+              </code>
+              <button
+                type="button"
+                aria-label="کپی شناسه دستگاه"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(deviceId)
+                    toast({ title: 'شناسه دستگاه کپی شد' })
+                  } catch {
+                    toast({ title: 'کپی ناموفق بود', variant: 'destructive' })
+                  }
+                }}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-teal-600 text-white shadow-sm transition-all hover:bg-teal-700 active:scale-95"
+              >
+                <Copy className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+            <p className="text-[11px] font-bold leading-5 text-teal-700/60">
+              این شناسه هویت دستگاه شما در جدول رقابت است. برای ورود به پنل مدیریت، شناسه‌ی مدیر
+              لازم است.
+            </p>
+            <button
+              type="button"
+              aria-label={adminDevice ? 'ورود به پنل مدیریت' : 'ورود مدیر'}
+              onClick={() => setScreen('admin')}
+              className={`flex h-12 w-full items-center justify-center gap-2 rounded-3xl border-b-4 font-black text-white shadow-lg transition-all active:translate-y-1 active:border-b-0 ${
+                adminDevice
+                  ? 'border-teal-700 bg-teal-600 hover:bg-teal-700'
+                  : 'border-teal-800/60 bg-teal-800 hover:bg-teal-900'
+              }`}
+            >
+              {adminDevice ? (
+                <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+              ) : (
+                <KeyRound className="h-5 w-5" aria-hidden="true" />
+              )}
+              {adminDevice ? 'پنل مدیریت' : 'ورود مدیر'}
+            </button>
           </section>
 
           {/* Danger zone */}
