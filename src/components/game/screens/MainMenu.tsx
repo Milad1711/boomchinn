@@ -92,7 +92,7 @@ export default function MainMenu() {
 
       {/* Center content */}
       <main className="relative z-10 flex h-full flex-col items-center justify-center gap-5 px-6">
-        <div className="drop-shadow-[0_18px_20px_rgba(13,148,136,0.25)]">
+        <div className="drop-shadow-[0_14px_20px_rgba(13,148,136,0.22)]">
           {logoOk ? (
             <Image
               src="/logo-boomchin-v3.png"
@@ -100,7 +100,6 @@ export default function MainMenu() {
               height={240}
               alt="لوگوی بازی"
               priority
-              className="rounded-[2.5rem]"
               onError={() => setLogoOk(false)}
             />
           ) : (

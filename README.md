@@ -46,7 +46,19 @@ public/                 # آیکون‌ها + manifest.json (PWA)
 
 ## استقرار: GitHub + Turso + Vercel
 
-### گام ۱ — GitHub
+### گام ۱ — GitHub (با GitHub Desktop)
+
+**آماده‌سازی:** فایل `boom-chin.zip` را دانلود و Extract کنید — پوشه‌ی `boom-chin` از قبل مخزن Git آماده دارد.
+
+1. [GitHub Desktop](https://desktop.github.com) را نصب کنید و با حساب GitHub خود **Sign in** کنید.
+2. منوی **File → Add local repository…** را بزنید.
+3. پوشه‌ی Extract شده (`boom-chin`) را انتخاب کنید → **Add repository**. (یک کامیت آماده می‌بیند — مشکلی نیست)
+4. دکمه‌ی **Publish repository** (بالای صفحه) را بزنید.
+   - **Name:** `boom-chin`
+   - تیک **Keep this code private** را بر اساس میلت خاموش/روشن کنید.
+   - **Publish** را بزنید — تمام! کد روی GitHub شماست.
+
+**روش جایگزین (خط فرمان):**
 
 ```bash
 git init
