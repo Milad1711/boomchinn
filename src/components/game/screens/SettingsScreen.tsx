@@ -1,10 +1,11 @@
 'use client'
 
 /**
- * Settings screen — audio/music/haptics/shadows toggles + reset progress.
+ * Settings screen — player name, haptics/shadows toggles + reset progress.
  */
+import { useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { ArrowRight, Music, SunMedium, Trash2, Vibrate, Volume2 } from 'lucide-react'
+import { ArrowRight, Pencil, SunMedium, Trash2, UserRound, Vibrate } from 'lucide-react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,6 +20,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { useGameStore, type Settings } from '@/lib/store'
 import { useToast } from '@/hooks/use-toast'
+import NameDialog from './NameDialog'
 
 interface SettingRow {
   key: keyof Settings
@@ -28,18 +30,18 @@ interface SettingRow {
 }
 
 const ROWS: SettingRow[] = [
-  { key: 'sfx', label: 'جلوه‌های صوتی', icon: Volume2, tint: 'bg-teal-100 text-teal-700' },
-  { key: 'music', label: 'موسیقی', icon: Music, tint: 'bg-emerald-100 text-emerald-600' },
   { key: 'haptics', label: 'لرزش', icon: Vibrate, tint: 'bg-amber-100 text-amber-600' },
   { key: 'shadows', label: 'سایه‌ها (کیفیت گرافیک)', icon: SunMedium, tint: 'bg-pink-100 text-pink-500' },
 ]
 
 export default function SettingsScreen() {
   const settings = useGameStore((s) => s.settings)
+  const name = useGameStore((s) => s.name)
   const toggleSetting = useGameStore((s) => s.toggleSetting)
   const resetProgress = useGameStore((s) => s.resetProgress)
   const setScreen = useGameStore((s) => s.setScreen)
   const { toast } = useToast()
+  const [nameOpen, setNameOpen] = useState(false)
 
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden bg-gradient-to-b from-[#d9f7ea] via-[#a8ecd9] to-[#7fe0d4]">
@@ -62,6 +64,34 @@ export default function SettingsScreen() {
       {/* Content */}
       <div className="flex-1 overflow-y-auto game-scroll [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-teal-300/60 [&::-webkit-scrollbar-track]:bg-transparent">
         <div className="mx-auto w-full max-w-md space-y-5 px-4 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-2">
+          {/* Player identity card */}
+          <section
+            aria-label="نام بازیکن"
+            className="w-full rounded-3xl bg-white p-6 shadow-md"
+          >
+            <p className="mb-3 text-xs font-black text-teal-500">رقابت</p>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="shrink-0 rounded-2xl bg-teal-100 p-2 text-teal-700">
+                  <UserRound className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <span className="block truncate font-extrabold text-teal-900">{name || 'بی‌نام'}</span>
+                  <span className="block text-[11px] font-bold text-teal-700/70">نام تو در جدول رقابت</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                aria-label="تغییر نام بازیکن"
+                onClick={() => setNameOpen(true)}
+                className="flex h-11 shrink-0 items-center gap-1.5 rounded-2xl bg-teal-600 px-4 text-sm font-black text-white shadow-sm transition-all hover:bg-teal-700 active:scale-95"
+              >
+                <Pencil className="h-4 w-4" aria-hidden="true" />
+                ویرایش
+              </button>
+            </div>
+          </section>
+
           {/* Toggles card */}
           <section
             aria-label="تنظیمات بازی"
@@ -131,6 +161,12 @@ export default function SettingsScreen() {
           </section>
         </div>
       </div>
+
+      <NameDialog
+        open={nameOpen}
+        onOpenChange={setNameOpen}
+        onSaved={() => toast({ title: 'نام بازیکن ذخیره شد' })}
+      />
     </div>
   )
 }

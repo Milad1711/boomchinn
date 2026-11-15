@@ -13,6 +13,10 @@ export const metadata: Metadata = {
   description:
     "بازی موبایلی معما و فیزیک: اشیای هم‌شکل را ادغام کن، با توپ مکانیکی موانع را بشکن و در بیش از ۱۰۰ مرحله ستاره جمع کن.",
   applicationName: "بوم چین",
+  icons: {
+    icon: "/logo-boomchin-v2.png",
+    apple: "/logo-boomchin-v2.png",
+  },
 };
 
 export const viewport: Viewport = {

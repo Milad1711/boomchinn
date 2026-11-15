@@ -8,12 +8,10 @@
 import { create } from 'zustand'
 import { LEVELS } from '@/game/levels'
 
-export type Screen = 'menu' | 'levels' | 'game' | 'settings' | 'shop'
+export type Screen = 'menu' | 'levels' | 'game' | 'settings' | 'shop' | 'ranks'
 export type GameStatus = 'briefing' | 'playing' | 'paused' | 'won' | 'lost'
 
 export interface Settings {
-  sfx: boolean
-  music: boolean
   haptics: boolean
   shadows: boolean
 }
@@ -72,6 +70,9 @@ export const BALL_SKINS: SkinDef[] = [
 const SAVE_KEY = 'ss_save_v1'
 const PID_KEY = 'ss_pid_v1'
 
+/** Max display-name length (code points). */
+export const NAME_MAX = 20
+
 export const DEFAULT_INVENTORY: Inventory = {
   extraShot: 1,
   bombShot: 0,
@@ -80,15 +81,15 @@ export const DEFAULT_INVENTORY: Inventory = {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  sfx: true,
-  music: true,
   haptics: true,
   shadows: true,
 }
 
 interface SaveData {
+  name: string
   coins: number
   stars: Record<number, number>
+  bestScores: Record<number, number>
   items: Inventory
   settings: Settings
 }
@@ -140,6 +141,7 @@ interface GameStore extends SaveData {
   buyCoinPack: (id: string) => boolean
 
   // settings / data
+  setName: (name: string) => void
   toggleSetting: (key: keyof Settings) => void
   resetProgress: () => void
   hydrate: () => Promise<void>
@@ -147,7 +149,8 @@ interface GameStore extends SaveData {
 
 // ---------------------------------------------------------------- persistence
 
-function getPlayerId(): string {
+/** Stable per-device player id (also the leaderboard identity). */
+export function getPlayerId(): string {
   if (typeof window === 'undefined') return 'server'
   let pid = window.localStorage.getItem(PID_KEY)
   if (!pid) {
@@ -157,6 +160,14 @@ function getPlayerId(): string {
   return pid
 }
 
+/** Clean a display name on the client (same rules as the server). */
+export function sanitizeNameLocal(raw: string): string {
+  const cleaned = raw
+    .replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028\u2029\ufeff]/g, '')
+    .trim()
+  return [...cleaned].slice(0, NAME_MAX).join('')
+}
+
 function readLocalSave(): Partial<SaveData> {
   if (typeof window === 'undefined') return {}
   try {
@@ -164,8 +175,10 @@ function readLocalSave(): Partial<SaveData> {
     if (!raw) return {}
     const data = JSON.parse(raw) as Partial<SaveData>
     return {
+      name: typeof data.name === 'string' ? data.name : undefined,
       coins: typeof data.coins === 'number' ? data.coins : undefined,
       stars: data.stars ?? undefined,
+      bestScores: data.bestScores ?? undefined,
       items: data.items ?? undefined,
       settings: data.settings ?? undefined,
     }
@@ -177,8 +190,8 @@ function readLocalSave(): Partial<SaveData> {
 let syncTimer: ReturnType<typeof setTimeout> | null = null
 
 function persist(get: () => GameStore) {
-  const { coins, stars, items, settings } = get()
-  const payload: SaveData = { coins, stars, items, settings }
+  const { name, coins, stars, bestScores, items, settings } = get()
+  const payload: SaveData = { name, coins, stars, bestScores, items, settings }
   try {
     window.localStorage.setItem(SAVE_KEY, JSON.stringify(payload))
   } catch {
@@ -206,8 +219,10 @@ function starsFor(score: number, thresholds: [number, number, number]): number {
 export const useGameStore = create<GameStore>((set, get) => ({
   hydrated: false,
   screen: 'menu',
+  name: '',
   coins: 50,
   stars: {},
+  bestScores: {},
   items: DEFAULT_INVENTORY,
   settings: DEFAULT_SETTINGS,
 
@@ -282,6 +297,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // gentle economy: coins stay scarce so the shop matters
     const earned = 2 * stars + Math.floor(finalScore / 300)
     const prev = state.stars[state.currentLevel] ?? 0
+    const prevBest = state.bestScores[state.currentLevel] ?? 0
     set({
       status: 'won',
       score: finalScore,
@@ -289,6 +305,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
       earnedCoins: earned,
       coins: state.coins + earned,
       stars: { ...state.stars, [state.currentLevel]: Math.max(prev, stars) },
+      // competition: keep each level's best score for the leaderboard
+      bestScores:
+        finalScore > prevBest
+          ? { ...state.bestScores, [state.currentLevel]: finalScore }
+          : state.bestScores,
     })
     persist(get)
   },
@@ -364,6 +385,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
     return true
   },
 
+  /** Save the player's display name (sanitized; used for the leaderboard). */
+  setName: (raw) => {
+    const name = sanitizeNameLocal(raw)
+    set({ name })
+    persist(get)
+  },
+
   toggleSetting: (key) => {
     set({ settings: { ...get().settings, [key]: !get().settings[key] } })
     persist(get)
@@ -373,6 +401,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({
       coins: 50,
       stars: {},
+      bestScores: {},
       items: DEFAULT_INVENTORY,
       settings: DEFAULT_SETTINGS,
     })
@@ -391,8 +420,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const local = readLocalSave()
     // apply local save immediately (fast path)
     set({
+      name: local.name ?? get().name,
       coins: local.coins ?? get().coins,
       stars: local.stars ?? get().stars,
+      bestScores: local.bestScores ?? get().bestScores,
       items: local.items ?? get().items,
       settings: { ...DEFAULT_SETTINGS, ...(local.settings ?? {}) },
     })
@@ -401,11 +432,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
       if (res.ok) {
         const data = (await res.json()) as
           | { found: false }
-          | { found: true; coins: number; stars: Record<number, number>; items: Inventory; settings: Settings }
+          | {
+              found: true
+              name?: string
+              coins: number
+              stars: Record<number, number>
+              bestScores: Record<number, number>
+              items: Inventory
+              settings: Settings
+            }
         if (data && data.found) {
           set({
+            name: data.name ?? get().name,
             coins: data.coins,
             stars: data.stars ?? {},
+            bestScores: data.bestScores ?? {},
             items: { ...DEFAULT_INVENTORY, ...data.items },
             settings: { ...DEFAULT_SETTINGS, ...data.settings },
           })
@@ -413,7 +454,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
           try {
             window.localStorage.setItem(
               SAVE_KEY,
-              JSON.stringify({ coins: data.coins, stars: data.stars, items: data.items, settings: data.settings })
+              JSON.stringify({
+                name: data.name ?? get().name,
+                coins: data.coins,
+                stars: data.stars,
+                bestScores: data.bestScores,
+                items: data.items,
+                settings: data.settings,
+              })
             )
           } catch {
             /* ignore */
@@ -430,4 +478,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
 /** Combined stars across all levels (for menu display). */
 export function totalStars(stars: Record<number, number>): number {
   return Object.values(stars).reduce((a, b) => a + b, 0)
+}
+
+/** Sum of every level's best score (competition metric). */
+export function totalScore(scores: Record<number, number>): number {
+  return Object.values(scores).reduce((a, b) => a + b, 0)
 }

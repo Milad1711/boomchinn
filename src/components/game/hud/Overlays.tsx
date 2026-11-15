@@ -12,14 +12,11 @@ import {
   House,
   LayoutGrid,
   Lightbulb,
-  Music,
   Play,
   RotateCcw,
   Star,
   Target,
-  Volume2,
 } from 'lucide-react'
-import { Switch } from '@/components/ui/switch'
 import { useGameStore } from '@/lib/store'
 import { LEVELS, goalText } from '@/game/levels'
 import { faNum } from '@/lib/format'
@@ -97,24 +94,10 @@ export function PauseOverlay() {
   const resume = useGameStore((s) => s.resume)
   const restartLevel = useGameStore((s) => s.restartLevel)
   const quitToMenu = useGameStore((s) => s.quitToMenu)
-  const sfx = useGameStore((s) => s.settings.sfx)
-  const music = useGameStore((s) => s.settings.music)
-  const toggleSetting = useGameStore((s) => s.toggleSetting)
 
   return (
     <OverlayShell>
       <h2 className="text-3xl font-black text-teal-900">توقف</h2>
-
-      <div className="flex items-center justify-center gap-3">
-        <div className="flex items-center gap-2 rounded-2xl bg-teal-50 px-3 py-2">
-          <Volume2 className="h-4 w-4 text-teal-600" aria-hidden="true" />
-          <Switch checked={sfx} onCheckedChange={() => toggleSetting('sfx')} aria-label="جلوه‌های صوتی" className="h-6 w-10 data-[state=checked]:bg-teal-600 data-[state=unchecked]:bg-teal-200" />
-        </div>
-        <div className="flex items-center gap-2 rounded-2xl bg-teal-50 px-3 py-2">
-          <Music className="h-4 w-4 text-teal-600" aria-hidden="true" />
-          <Switch checked={music} onCheckedChange={() => toggleSetting('music')} aria-label="موسیقی" className="h-6 w-10 data-[state=checked]:bg-teal-600 data-[state=unchecked]:bg-teal-200" />
-        </div>
-      </div>
 
       <button type="button" aria-label="ادامه بازی" onClick={() => resume()} className={PRIMARY_BTN}>
         <Play className="h-5 w-5 fill-current" aria-hidden="true" />

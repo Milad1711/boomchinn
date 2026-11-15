@@ -7,13 +7,13 @@
  */
 import { useEffect, useRef } from 'react'
 import { useGameStore } from '@/lib/store'
-import { audio } from '@/game/audio'
 import { GameEngine } from '@/game/engine'
 import { engineRef } from '@/game/engineRef'
 import MainMenu from '@/components/game/screens/MainMenu'
 import LevelSelect from '@/components/game/screens/LevelSelect'
 import SettingsScreen from '@/components/game/screens/SettingsScreen'
 import Shop from '@/components/game/screens/Shop'
+import Leaderboard from '@/components/game/screens/Leaderboard'
 import Hud from '@/components/game/hud/Hud'
 import { LoseOverlay, PauseOverlay, WinOverlay, BriefingOverlay } from '@/components/game/hud/Overlays'
 
@@ -31,25 +31,6 @@ export default function GameShell() {
   useEffect(() => {
     void useGameStore.getState().hydrate()
   }, [])
-
-  // audio unlock + UI click sounds
-  useEffect(() => {
-    const unlock = () => audio.unlock()
-    const click = (e: MouseEvent) => {
-      if ((e.target as HTMLElement | null)?.closest?.('button')) audio.click()
-    }
-    document.addEventListener('pointerdown', unlock, { once: true })
-    document.addEventListener('click', click)
-    return () => {
-      document.removeEventListener('pointerdown', unlock)
-      document.removeEventListener('click', click)
-    }
-  }, [])
-
-  // music / sfx toggle
-  useEffect(() => {
-    audio.applySettings(settings.sfx, settings.music)
-  }, [settings.sfx, settings.music])
 
   // engine lifecycle: (re)created for every level run
   useEffect(() => {
@@ -118,6 +99,7 @@ export default function GameShell() {
       {screen === 'levels' && <LevelSelect />}
       {screen === 'settings' && <SettingsScreen />}
       {screen === 'shop' && <Shop />}
+      {screen === 'ranks' && <Leaderboard />}
     </div>
   )
 }

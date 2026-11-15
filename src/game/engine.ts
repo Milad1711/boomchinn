@@ -13,7 +13,7 @@
  *  - Idle auto-hint: after a few seconds the game itself highlights the
  *    two closest mergeable items.
  *  - Combos, score, goal tracking, win/lose detection.
- *  - Particles, debris, shockwaves, floaties, shake, sounds, haptics.
+ *  - Particles, debris, shockwaves, floaties, shake, haptics (no audio).
  */
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
@@ -32,7 +32,6 @@ import {
 } from './types'
 import { BALL_SKINS, type Settings } from '@/lib/store'
 import { faNum } from '@/lib/format'
-import { audio } from './audio'
 import { Effects } from './effects'
 
 export interface EngineCallbacks {
@@ -228,7 +227,7 @@ export class GameEngine {
     this.def = LEVELS[levelIndex] ?? LEVELS[0]
     this.cb = cb
     this.shots = this.def.shots
-    this.settings = { sfx: true, music: true, haptics: true, shadows: true }
+    this.settings = { haptics: true, shadows: true }
 
     // ---------------------------------------------------------- renderer
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' })
@@ -766,7 +765,6 @@ export class GameEngine {
   }
 
   private onPointerDown = (e: PointerEvent) => {
-    audio.unlock()
     if (this.paused || this.won || this.lost || this.disposed) return
     this.setNdc(e)
     this.lastActionTime = this.time
@@ -787,7 +785,6 @@ export class GameEngine {
       item.body.wakeUp()
       this.holdPlane.set(new THREE.Vector3(0, 1, 0), -HOLD_Y)
       this.updateDragPoint()
-      audio.pick()
       this.canvas.setPointerCapture(e.pointerId)
       return
     }
@@ -883,7 +880,6 @@ export class GameEngine {
     const ctrl = from.clone().add(to).multiplyScalar(0.5)
     ctrl.y += Math.min(2.2, 0.9 + dist * 0.22)
 
-    audio.shoot()
     this.buzz(25)
     this.shake = Math.max(this.shake, 0.14)
     this.recoil = 1
@@ -974,7 +970,6 @@ export class GameEngine {
     if (m.bomb) {
       this.fx.burst(p, '#ffb14d', 40, 7, 3)
       this.fx.ring(p, '#ffb14d', 3.6)
-      audio.blast()
       this.shake = Math.max(this.shake, 0.7)
       this.buzz(70)
       this.explode(c, 3.4, 9)
@@ -987,7 +982,6 @@ export class GameEngine {
     this.explode(c, 2.4, 4)
     this.splashDamage(c, 1.5, 6)
     if (m.target && !m.target.dead) this.damageObstacle(m.target, MISSILE_DMG[m.target.kind], c)
-    else audio.thud()
   }
 
   private nearestObstacle(from: THREE.Vector3): ObstacleItem | null {
@@ -1009,7 +1003,6 @@ export class GameEngine {
     o.hp -= dmg
     o.flash = 1
     this.drawHpBar(o)
-    audio.crack()
     this.fx.burst(new THREE.Vector3(from.x, Math.max(0.3, from.y), from.z), OBSTACLE_STYLE[o.kind].color, 8, 3, 1)
     if (o.hp <= 0) this.destroyObstacle(o)
   }
@@ -1025,7 +1018,6 @@ export class GameEngine {
     this.fx.debrisBurst(p, color, 8)
     this.fx.burst(p, color, 26, 5.5, 2.6)
     this.fx.ring(p, color, 2.3)
-    audio.break_()
     this.buzz(35)
     this.shake = Math.max(this.shake, 0.42)
 
@@ -1105,7 +1097,6 @@ export class GameEngine {
       this.fx.burst(mid, '#e879f9', 60, 8, 4)
       this.fx.burst(mid, '#ffffff', 30, 6, 3)
       this.fx.ring(mid, '#e879f9', 4.2)
-      audio.blast()
       this.buzz(90)
       this.shake = Math.max(this.shake, 0.8)
       const c = new CANNON.Vec3(mid.x, mid.y, mid.z)
@@ -1134,7 +1125,6 @@ export class GameEngine {
     // fx
     this.fx.burst(mid, color, 22 + newTier * 6, 4.5 + newTier, 2.4)
     this.fx.ring(mid, color, 1.6 + newTier * 0.5)
-    audio.merge(newTier)
     this.buzz(18 + newTier * 12)
     if (newTier === MAX_TIER) {
       this.fx.floatText('ستاره‌ی درخشان!', mid.clone().setY(2.1), 'big')
@@ -1174,7 +1164,6 @@ export class GameEngine {
     if (!done) return
     this.won = true
     this.winAt = this.time
-    audio.win()
     this.buzz([40, 60, 40, 60, 80])
     // confetti
     for (let i = 0; i < 5; i++) {
@@ -1231,7 +1220,6 @@ export class GameEngine {
     this.loseReason = reason
     this.lostAt = this.time
     if (this.held) this.releaseHeld()
-    audio.lose()
     this.buzz([60, 40, 60])
   }
 
@@ -1511,7 +1499,6 @@ export class GameEngine {
 
   applySettings(s: Settings) {
     this.settings = s
-    audio.applySettings(s.sfx, s.music)
     if (this.renderer.shadowMap.enabled !== s.shadows) {
       this.renderer.shadowMap.enabled = s.shadows
       this.scene.traverse((obj) => {
@@ -1533,13 +1520,9 @@ export class GameEngine {
   /** Arm/disarm the bomb shot. Ignored when the player has no bombs. */
   toggleBomb(hasBomb: boolean) {
     if (this.won || this.lost) return
-    if (!hasBomb) {
-      audio.click()
-      return
-    }
+    if (!hasBomb) return
     this.bombArmed = !this.bombArmed
     this.cb.onBombArmed(this.bombArmed)
-    audio.click()
   }
 
   private buzz(pattern: number | number[]) {

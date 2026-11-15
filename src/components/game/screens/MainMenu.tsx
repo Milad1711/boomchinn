@@ -6,7 +6,7 @@
 import { useState } from 'react'
 import Image from 'next/image'
 import { motion } from 'framer-motion'
-import { Coins, Play, Settings, Shapes, ShoppingBag, Star } from 'lucide-react'
+import { Coins, Play, Settings, Shapes, ShoppingBag, Star, Trophy, UserRound } from 'lucide-react'
 import { totalStars, useGameStore } from '@/lib/store'
 import { TIERS } from '@/game/types'
 import { faNum } from '@/lib/format'
@@ -36,6 +36,7 @@ const FLOATING_SHAPES: FloatingShape[] = [
 export default function MainMenu() {
   const coins = useGameStore((s) => s.coins)
   const stars = useGameStore((s) => s.stars)
+  const name = useGameStore((s) => s.name)
   const setScreen = useGameStore((s) => s.setScreen)
   const [logoOk, setLogoOk] = useState(true)
 
@@ -77,12 +78,24 @@ export default function MainMenu() {
         </div>
       </div>
 
+      {/* Player identity chip */}
+      <button
+        type="button"
+        aria-label={name ? `نام بازیکن: ${name} — تغییر نام` : 'ثبت نام بازیکن'}
+        onClick={() => setScreen('ranks')}
+        className="absolute start-4 z-10 flex max-w-[10rem] items-center gap-1.5 rounded-full bg-white/70 px-3 py-1.5 text-xs font-extrabold text-teal-900 shadow-sm backdrop-blur transition-all hover:bg-white active:scale-95"
+        style={{ top: 'calc(env(safe-area-inset-top) + 4.25rem)' }}
+      >
+        <UserRound className="h-4 w-4 shrink-0 text-teal-600" aria-hidden="true" />
+        <span className="truncate">{name || 'ثبت اسم'}</span>
+      </button>
+
       {/* Center content */}
       <main className="relative z-10 flex h-full flex-col items-center justify-center gap-5 px-6">
         <div className="drop-shadow-[0_18px_20px_rgba(13,148,136,0.25)]">
           {logoOk ? (
             <Image
-              src="/logo-boomchin.png"
+              src="/logo-boomchin-v2.png"
               width={240}
               height={240}
               alt="لوگوی بازی"
@@ -111,6 +124,15 @@ export default function MainMenu() {
           >
             <Play className="h-6 w-6 fill-current" aria-hidden="true" />
             شروع بازی
+          </button>
+          <button
+            type="button"
+            aria-label="رقابت با بازیکن‌ها"
+            onClick={() => setScreen('ranks')}
+            className="flex h-14 w-full items-center justify-center gap-2 rounded-3xl border-b-4 border-teal-200 bg-white/85 font-extrabold text-teal-900 shadow transition-all hover:bg-white active:translate-y-0.5 active:border-b-0"
+          >
+            <Trophy className="h-5 w-5 text-amber-500" aria-hidden="true" />
+            رقابت
           </button>
           <button
             type="button"
