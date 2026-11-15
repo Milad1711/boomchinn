@@ -148,6 +148,19 @@ turso db shell boomchin < migration.sql # اعمال روی دیتابیس اب�
 
 ---
 
+## نسخه اندروید + کافه بازار
+
+پوشه‌ی `bazaar-android/` نسخه‌ی اندرویدی بازی (WebView) همراه با **پرداخت درون‌برنامه‌ای
+کافه بازار** است. راهنمای کامل: `bazaar-android/README.md`
+
+- پکیج: `com.boomchin.game` — نسخه ۱.۰
+- ۴ محصول مصرفی در پنل بازار: `pack_s` ، `pack_m` ، `pack_l` ، `pack_xl`
+- کلید RSA در `bazaar-android/app/src/com/boomchin/game/Config.java` جای‌گذاری می‌شود؛
+  تا قبل از آن، داخل برنامه خریدها «نمایشی» می‌مانند.
+- کلید امضا: `bazaar-android/keystore/boomchin.keystore` (رمز `boomchin1405`) — نگه‌داری شود!
+
+---
+
 ## License
 
 MIT

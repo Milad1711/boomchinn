@@ -17,6 +17,7 @@ import {
 } from '@/lib/store'
 import { faNum } from '@/lib/format'
 import { useToast } from '@/hooks/use-toast'
+import { getBazaarBridge, purchaseOnBazaar, isInBazaarApp } from '@/lib/bazaar'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 
@@ -53,9 +54,31 @@ export default function Shop() {
   const { toast } = useToast()
 
   const [selectedPack, setSelectedPack] = useState<CoinPack | null>(null)
+  const [buying, setBuying] = useState(false)
+  const inBazaar = isInBazaarApp()
 
-  const confirmPackPurchase = () => {
-    if (!selectedPack) return
+  const confirmPackPurchase = async () => {
+    if (!selectedPack || buying) return
+    // داخل برنامه‌ی بازار: پرداخت واقعی درون‌برنامه‌ای
+    if (getBazaarBridge()) {
+      setBuying(true)
+      const res = await purchaseOnBazaar(selectedPack.id)
+      setBuying(false)
+      if (res.state === 'success') {
+        buyCoinPack(selectedPack.id)
+        toast({
+          title: 'خرید انجام شد!',
+          description: `${faNum(selectedPack.coins)} سکه به حساب شما اضافه شد.`,
+        })
+        setSelectedPack(null)
+      } else if (res.state === 'cancel') {
+        toast({ title: 'خرید لغو شد' })
+      } else {
+        toast({ title: 'خرید ناموفق بود — دوباره تلاش کنید', variant: 'destructive' })
+      }
+      return
+    }
+    // خارج از برنامه (مرورگر): خرید نمایشی
     buyCoinPack(selectedPack.id)
     toast({
       title: 'خرید انجام شد!',
@@ -261,16 +284,19 @@ export default function Shop() {
                 </DialogDescription>
               </DialogHeader>
               <p className="rounded-2xl bg-amber-50 px-4 py-2.5 text-center text-xs font-bold text-amber-700">
-                این یک خرید نمایشی است؛ با تأیید، سکه‌ها فوراً اضافه می‌شوند.
+                {inBazaar
+                  ? 'پرداخت از طریق کافه بازار انجام می‌شود؛ بعد از تأیید، سکه‌ها اضافه می‌شوند.'
+                  : 'این یک خرید نمایشی است؛ با تأیید، سکه‌ها فوراً اضافه می‌شوند. برای خرید واقعی، برنامه را از کافه بازار نصب کنید.'}
               </p>
               <div className="flex w-full flex-col gap-2">
                 <Button
                   type="button"
-                  aria-label="تأیید خرید نمایشی"
-                  onClick={confirmPackPurchase}
+                  aria-label={inBazaar ? 'پرداخت از طریق کافه بازار' : 'تأیید خرید نمایشی'}
+                  disabled={buying}
+                  onClick={() => void confirmPackPurchase()}
                   className="h-12 w-full rounded-2xl bg-emerald-500 text-base font-black text-white hover:bg-emerald-600"
                 >
-                  تأیید خرید
+                  {inBazaar ? 'پرداخت از کافه بازار' : 'تأیید خرید'}
                 </Button>
                 <Button
                   type="button"

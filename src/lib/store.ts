@@ -505,6 +505,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
     } catch {
       /* offline: local save is enough */
     }
+    // Café Bazaar wrapper: credit coins for restored (already-paid) purchases
+    try {
+      window.addEventListener('bazaar-restore', (e) => {
+        const sku = (e as CustomEvent<{ sku?: string }>).detail?.sku
+        if (sku && COIN_PACKS.some((p) => p.id === sku)) get().buyCoinPack(sku)
+      })
+    } catch {
+      /* ignore */
+    }
     set({ hydrated: true })
   },
 }))
