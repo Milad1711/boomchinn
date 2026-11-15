@@ -66,3 +66,6 @@ migration.sql
 /tests/
 /tool-results/
 /.zscripts/
+
+# sandbox gateway config
+Caddyfile
