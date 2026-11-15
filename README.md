@@ -44,7 +44,10 @@ public/                 # آیکون‌ها + manifest.json (PWA)
 
 ---
 
-## استقرار: GitHub + Turso + Vercel
+## استقرار: GitHub + Turso + Vercel (یک‌بار برای همیشه)
+
+کل استقرار ۳ گام دارد و **نیازی به نصب Turso CLI یا اجرای migration نیست** —
+جدول‌های دیتابیس روی اولین درخواست به‌صورت خودکار ساخته می‌شوند.
 
 ### گام ۱ — GitHub (با GitHub Desktop)
 
@@ -71,44 +74,52 @@ git push -u origin main
 
 > فایل `.env` هرگز push نمی‌شود (در `.gitignore` است). فقط `.env.example` نمونه است.
 
-### گام ۲ — ساخت دیتابیس Turso
+### گام ۲ — ساخت دیتابیس Turso (فقط مرورگر، بدون نصب چیزی)
 
-```bash
-# نصب CLI: https://docs.turso.tech/cli
-turso auth signup          # یا login
-turso db create boomchin   # ساخت دیتابیس
-turso db show boomchin --url          # ← DATABASE_URL
-turso db tokens create boomchin       # ← DATABASE_AUTH_TOKEN
-```
+1. به [app.turso.tech](https://app.turso.tech) بروید و با **GitHub** وارد شوید (Sign up با GitHub).
+2. **Create Database** را بزنید:
+   - **Name:** `boomchin`
+   - **Location:** نزدیک‌ترین منطقه، مثلاً `fra` (فرانکفورت) یا `arn` (استکهلم)
+   - **Create** را بزنید.
+3. در صفحه‌ی دیتابیس، **Database URL** را کپی کنید — شبیه
+   `libsql://boomchin-<your-org>.turso.io` است. ← این همان `DATABASE_URL` است.
+4. توکن بسازید: در صفحه‌ی دیتابیس بخش ساخت توکن
+   (**Create Database Token / Tokens → Create token**) را باز کنید و توکن را کپی کنید.
+   ← این همان `DATABASE_AUTH_TOKEN` است.
 
-ساخت جداول روی Turso (تولید SQL از روی Prisma schema):
+> اگر دکمه‌ی توکن را در سایت پیدا نکردید، این دو دستور هم همان کار را می‌کند
+> (نیازمند WSL در ویندوز): `turso db show boomchin --url` و `turso db tokens create boomchin`
 
-```bash
-bun install
-bun run db:sql                          # فایل migration.sql ساخته می‌شود
-turso db shell boomchin < migration.sql # اعمال روی دیتابیس ابری
-```
+**ساخت جداول؟ لازم نیست!** اولین باری که بازی روی سایت زنده اجرا شود،
+جدول‌ها خودکار ساخته می‌شوند.
 
 ### گام ۳ — Vercel
 
-1. در [vercel.com](https://vercel.com) روی **Add New → Project** کلیک کنید و ریپوی GitHub را import کنید.
+1. در [vercel.com](https://vercel.com) با GitHub وارد شوید → **Add New → Project** → ریپوی `boom-chin` را **Import** کنید.
 2. در بخش **Environment Variables** این سه مقدار را اضافه کنید:
-   - `DATABASE_URL` = آدرس libsql از گام ۲
-   - `DATABASE_AUTH_TOKEN` = توکن از گام ۲
-   - `ADMIN_DEVICE_ID` = شناسه‌ی دستگاه مدیر (پنل مدیریت)
-3. **Deploy** — تمام! (`next build` به‌صورت خودکار اجرا می‌شود)
 
-> کد `src/lib/db.ts` به‌طور خودکار تشخیص می‌دهد: اگر `DATABASE_URL` با `libsql://`
-> شروع شود از آداپتور رسمی Turso (`@prisma/adapter-libsql`) استفاده می‌کند،
-> وگرنه همان SQLite محلی را می‌خواند.
+   | Name | Value |
+   |---|---|
+   | `DATABASE_URL` | آدرس `libsql://…` از گام ۲ |
+   | `DATABASE_AUTH_TOKEN` | توکن از گام ۲ |
+   | `ADMIN_DEVICE_ID` | شناسه‌ی دستگاه مدیر خودتان (در بازی: تنظیمات → شناسه دستگاه) |
 
-### به‌روزرسانی جداول در آینده
+3. **Deploy** را بزنید — تمام! سایت زنده است.
 
-هر وقت `prisma/schema.prisma` را تغییر دادید:
+> - کد `src/lib/db.ts` به‌طور خودکار تشخیص می‌دهد: اگر `DATABASE_URL` با `libsql://`
+>   شروع شود از آداپتور رسمی Turso (`@prisma/adapter-libsql`) استفاده می‌کند،
+>   وگرنه همان SQLite محلی را می‌خواند.
+> - بعد از Deploy دیگر هیچ کاری لازم نیست — بازیکن‌ها روی همان آدرس Vercel بازی می‌کنند
+>   و پیشرفت‌شان روی Turso ذخیره می‌شود.
+> - هر تغییر آینده فقط با push شدن کد به GitHub، خودکار روی Vercel دوباره deploy می‌شود.
+
+### به‌روزرسانی جداول در آینده (اختیاری)
+
+جدول‌های جدید/ستون‌های جدید اگر روزی به `prisma/schema.prisma` اضافه شدند:
 
 ```bash
-bun run db:sql
-turso db shell boomchin < migration.sql
+bun run db:sql                          # فایل migration.sql ساخته می‌شود
+turso db shell boomchin < migration.sql # اعمال روی دیتابیس ابری (نیازمند WSL در ویندوز)
 ```
 
 ---

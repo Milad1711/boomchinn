@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, ensureSchema } from '@/lib/db'
 import { adminFromRequest, adminUnauthorized } from '@/lib/admin'
 
 export const dynamic = 'force-dynamic'
@@ -17,7 +17,8 @@ interface AdminUserRow {
 function sumStars(json: string): number {
   try {
     const parsed = JSON.parse(json) as Record<string, unknown>
-    return Object.values(parsed).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0)
+    const nums = Object.values(parsed).filter((v): v is number => typeof v === 'number')
+    return nums.reduce((a, b) => a + b, 0)
   } catch {
     return 0
   }
@@ -35,6 +36,7 @@ export async function GET(req: NextRequest) {
   const q = (req.nextUrl.searchParams.get('q') ?? '').trim().toLowerCase()
 
   try {
+    await ensureSchema()
     const rows = await db.playerProgress.findMany({
       orderBy: { updatedAt: 'desc' },
       select: { id: true, name: true, coins: true, stars: true, createdAt: true, updatedAt: true },

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, ensureSchema } from '@/lib/db'
 
 /**
  * GET /api/leaderboard?playerId=...&limit=50
@@ -41,6 +41,7 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(MAX_LIMIT, Math.max(10, Math.round(Number.isFinite(limitParam) ? limitParam : 50)))
 
   try {
+    await ensureSchema()
     const rows = await db.playerProgress.findMany({
       select: { id: true, name: true, stars: true, bestScores: true },
     })

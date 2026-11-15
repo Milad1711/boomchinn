@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
-import { db } from '@/lib/db'
+import { db, ensureSchema } from '@/lib/db'
 import { adminFromRequest, adminUnauthorized } from '@/lib/admin'
 
 export const dynamic = 'force-dynamic'
@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
   const gift = Math.min(Math.round(amount), MAX_GIFT)
 
   try {
+    await ensureSchema()
     const row = await db.playerProgress.update({
       where: { id: playerId },
       data: { coins: { increment: gift } },

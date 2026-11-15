@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, ensureSchema } from '@/lib/db'
 
 interface ProgressBody {
   playerId?: string
@@ -32,6 +32,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'playerId required' }, { status: 400 })
   }
   try {
+    await ensureSchema()
     const row = await db.playerProgress.findUnique({ where: { id: playerId } })
     if (!row) return NextResponse.json({ found: false })
     return NextResponse.json({
@@ -63,6 +64,7 @@ export async function POST(req: NextRequest) {
   }
   const name = sanitizeName(body.name)
   try {
+    await ensureSchema()
     await db.playerProgress.upsert({
       where: { id: body.playerId },
       // on create store whatever name we got (may be empty);
