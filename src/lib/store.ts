@@ -14,6 +14,8 @@ export type GameStatus = 'briefing' | 'playing' | 'paused' | 'won' | 'lost'
 export interface Settings {
   haptics: boolean
   shadows: boolean
+  /** Success chime when two balls merge. */
+  sound: boolean
 }
 
 export interface Inventory {
@@ -83,6 +85,7 @@ export const DEFAULT_INVENTORY: Inventory = {
 export const DEFAULT_SETTINGS: Settings = {
   haptics: true,
   shadows: true,
+  sound: true,
 }
 
 interface SaveData {

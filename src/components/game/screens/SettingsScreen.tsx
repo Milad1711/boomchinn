@@ -5,7 +5,7 @@
  */
 import { useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { ArrowRight, Pencil, SunMedium, Trash2, UserRound, Vibrate } from 'lucide-react'
+import { ArrowRight, Pencil, SunMedium, Trash2, UserRound, Vibrate, Volume2 } from 'lucide-react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,6 +30,7 @@ interface SettingRow {
 }
 
 const ROWS: SettingRow[] = [
+  { key: 'sound', label: 'صدای موفقیت (ادغام توپ‌ها)', icon: Volume2, tint: 'bg-teal-100 text-teal-600' },
   { key: 'haptics', label: 'لرزش', icon: Vibrate, tint: 'bg-amber-100 text-amber-600' },
   { key: 'shadows', label: 'سایه‌ها (کیفیت گرافیک)', icon: SunMedium, tint: 'bg-pink-100 text-pink-500' },
 ]

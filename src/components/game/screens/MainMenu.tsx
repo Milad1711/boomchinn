@@ -95,7 +95,7 @@ export default function MainMenu() {
         <div className="drop-shadow-[0_18px_20px_rgba(13,148,136,0.25)]">
           {logoOk ? (
             <Image
-              src="/logo-boomchin-v2.png"
+              src="/logo-boomchin-v3.png"
               width={240}
               height={240}
               alt="لوگوی بازی"

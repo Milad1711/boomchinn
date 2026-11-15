@@ -13,7 +13,8 @@
  *  - Idle auto-hint: after a few seconds the game itself highlights the
  *    two closest mergeable items.
  *  - Combos, score, goal tracking, win/lose detection.
- *  - Particles, debris, shockwaves, floaties, shake, haptics (no audio).
+ *  - Particles, debris, shockwaves, floaties, shake, haptics and a
+ *    synthesized success chime whenever two balls merge (Web Audio).
  */
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
@@ -33,6 +34,7 @@ import {
 import { BALL_SKINS, type Settings } from '@/lib/store'
 import { faNum } from '@/lib/format'
 import { Effects } from './effects'
+import { unlockAudio, setSoundEnabled, sfxMerge, sfxStarBlast } from './audio'
 
 export interface EngineCallbacks {
   onScore: (delta: number) => void
@@ -227,7 +229,8 @@ export class GameEngine {
     this.def = LEVELS[levelIndex] ?? LEVELS[0]
     this.cb = cb
     this.shots = this.def.shots
-    this.settings = { haptics: true, shadows: true }
+    this.settings = { haptics: true, shadows: true, sound: true }
+    setSoundEnabled(true)
 
     // ---------------------------------------------------------- renderer
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' })
@@ -766,6 +769,7 @@ export class GameEngine {
 
   private onPointerDown = (e: PointerEvent) => {
     if (this.paused || this.won || this.lost || this.disposed) return
+    unlockAudio() // resume the AudioContext inside the user gesture
     this.setNdc(e)
     this.lastActionTime = this.time
     this.hintTextShown = false
@@ -1098,6 +1102,7 @@ export class GameEngine {
       this.fx.burst(mid, '#ffffff', 30, 6, 3)
       this.fx.ring(mid, '#e879f9', 4.2)
       this.buzz(90)
+      if (this.settings.sound) sfxStarBlast()
       this.shake = Math.max(this.shake, 0.8)
       const c = new CANNON.Vec3(mid.x, mid.y, mid.z)
       this.explode(c, 3.8, 10)
@@ -1126,6 +1131,7 @@ export class GameEngine {
     this.fx.burst(mid, color, 22 + newTier * 6, 4.5 + newTier, 2.4)
     this.fx.ring(mid, color, 1.6 + newTier * 0.5)
     this.buzz(18 + newTier * 12)
+    if (this.settings.sound) sfxMerge(newTier)
     if (newTier === MAX_TIER) {
       this.fx.floatText('ستاره‌ی درخشان!', mid.clone().setY(2.1), 'big')
       this.fx.burst(mid, '#ffffff', 24, 6, 3)
@@ -1499,6 +1505,7 @@ export class GameEngine {
 
   applySettings(s: Settings) {
     this.settings = s
+    setSoundEnabled(s.sound)
     if (this.renderer.shadowMap.enabled !== s.shadows) {
       this.renderer.shadowMap.enabled = s.shadows
       this.scene.traverse((obj) => {
