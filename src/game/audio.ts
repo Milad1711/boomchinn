@@ -6,11 +6,88 @@
  * when two max-tier gems produce a star blast.
  *
  * The AudioContext is created/resumed lazily from a user gesture
- * (engine pointerdown) to satisfy mobile autoplay policies.
+ * (engine pointerdown) to satisfy mobile autoplay policies. A light
+ * background music loop (see startMusic) shares the same context.
  */
 
 let ctx: AudioContext | null = null
 let enabled = true
+
+// ------------------------------------------------------- background music
+// Light instrumental loop (public/music/boomchin-theme.mp3), played on a
+// looping AudioBufferSource so it repeats seamlessly. Starts on the first
+// user gesture (same unlockAudio as the SFX) and can be toggled in settings.
+
+let musicEnabled = true
+let musicStarting = false
+let musicSource: AudioBufferSourceNode | null = null
+let musicGain: GainNode | null = null
+let visibilityHooked = false
+
+/** Music volume (the rendered file itself is already very quiet). */
+const MUSIC_VOLUME = 0.55
+const MUSIC_URL = '/music/boomchin-theme.mp3'
+
+function hookVisibility() {
+  if (visibilityHooked || typeof document === 'undefined') return
+  visibilityHooked = true
+  document.addEventListener('visibilitychange', () => {
+    if (!ctx) return
+    if (document.hidden) {
+      void ctx.suspend().catch(() => undefined)
+    } else {
+      void ctx.resume().catch(() => undefined)
+    }
+  })
+}
+
+async function startMusic() {
+  if (!ctx || ctx.state !== 'running' || !musicEnabled || musicStarting || musicSource) return
+  musicStarting = true
+  try {
+    const res = await fetch(MUSIC_URL)
+    if (!res.ok) throw new Error(String(res.status))
+    const raw = await res.arrayBuffer()
+    const buffer = await ctx.decodeAudioData(raw)
+    if (!ctx || !musicEnabled) return
+    musicGain = ctx.createGain()
+    musicGain.gain.value = MUSIC_VOLUME
+    musicGain.connect(ctx.destination)
+    const src = ctx.createBufferSource()
+    src.buffer = buffer
+    src.loop = true
+    src.connect(musicGain)
+    src.start()
+    musicSource = src
+    hookVisibility()
+  } catch {
+    /* music is optional — never break the game over it */
+  } finally {
+    musicStarting = false
+  }
+}
+
+function stopMusic() {
+  try {
+    musicSource?.stop()
+  } catch {
+    /* already stopped */
+  }
+  musicSource = null
+  try {
+    musicGain?.disconnect()
+  } catch {
+    /* ignore */
+  }
+  musicGain = null
+}
+
+/** Toggle the background music from game settings. */
+export function setMusicEnabled(v: boolean) {
+  musicEnabled = v
+  if (v) void startMusic()
+  else stopMusic()
+}
 
 type WindowWithWebkit = Window & typeof globalThis & {
   webkitAudioContext?: typeof AudioContext
@@ -32,6 +109,8 @@ export function unlockAudio() {
       ctx = new AC()
     }
     if (ctx.state === 'suspended') void ctx.resume().catch(() => undefined)
+    // background music rides on the same unlocked context
+    if (musicEnabled) void startMusic()
   } catch {
     /* audio not available on this device */
   }

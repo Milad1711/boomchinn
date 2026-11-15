@@ -72,3 +72,6 @@ Caddyfile
 
 # generated download artifact
 /public/*.zip
+
+# android build outputs
+bazaar-android/app/build/

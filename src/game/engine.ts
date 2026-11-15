@@ -34,7 +34,7 @@ import {
 import { BALL_SKINS, type Settings } from '@/lib/store'
 import { faNum } from '@/lib/format'
 import { Effects } from './effects'
-import { unlockAudio, setSoundEnabled, sfxMerge, sfxStarBlast } from './audio'
+import { unlockAudio, setSoundEnabled, setMusicEnabled, sfxMerge, sfxStarBlast } from './audio'
 
 export interface EngineCallbacks {
   onScore: (delta: number) => void
@@ -229,7 +229,7 @@ export class GameEngine {
     this.def = LEVELS[levelIndex] ?? LEVELS[0]
     this.cb = cb
     this.shots = this.def.shots
-    this.settings = { haptics: true, shadows: true, sound: true }
+    this.settings = { haptics: true, shadows: true, sound: true, music: true }
     setSoundEnabled(true)
 
     // ---------------------------------------------------------- renderer
@@ -1506,6 +1506,7 @@ export class GameEngine {
   applySettings(s: Settings) {
     this.settings = s
     setSoundEnabled(s.sound)
+    setMusicEnabled(s.music)
     if (this.renderer.shadowMap.enabled !== s.shadows) {
       this.renderer.shadowMap.enabled = s.shadows
       this.scene.traverse((obj) => {

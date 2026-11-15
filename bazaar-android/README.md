@@ -8,7 +8,7 @@
 
 ```
 app/
-  AndroidManifest.xml        ← پکیج: com.boomchin.game — نسخه: 1.0 (versionCode 1)
+  AndroidManifest.xml        ← پکیج: com.boomchin.game — نسخه: 1.1 (versionCode 2)
   src/com/boomchin/game/
     Config.java              ← ⭐ آدرس سایت + جای کلید RSA + شناسه‌ی محصولات
     MainActivity.java        ← WebView + پل خرید (JavascriptInterface)
@@ -58,7 +58,8 @@ aapt2 compile --dir res -o res.zip
 aapt2 link -o app.unsigned.apk -I android.jar --manifest AndroidManifest.xml -A assets res.zip --java gen
 javac -source 8 -target 8 -classpath android.jar -d obj $(find src gen -name '*.java')
 d8 --release --lib android.jar --min-api 21 --output out $(find obj -name '*.class')
-zip app.unsigned.apk out/classes.dex
+# دقت: classes.dex باید در ریشه‌ی APK باشد (نه داخل پوشه‌ی out)
+cd out && zip -X ../app.unsigned.apk classes.dex && cd ..
 zipalign -f 4 app.unsigned.apk app.aligned.apk
 apksigner sign --ks keystore/boomchin.keystore --ks-pass pass:boomchin1405 --out BoomChin.apk app.aligned.apk
 ```

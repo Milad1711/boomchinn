@@ -9,6 +9,7 @@ import { useEffect, useRef } from 'react'
 import { useGameStore } from '@/lib/store'
 import { GameEngine } from '@/game/engine'
 import { engineRef } from '@/game/engineRef'
+import { setMusicEnabled } from '@/game/audio'
 import MainMenu from '@/components/game/screens/MainMenu'
 import LevelSelect from '@/components/game/screens/LevelSelect'
 import SettingsScreen from '@/components/game/screens/SettingsScreen'
@@ -69,6 +70,11 @@ export default function GameShell() {
   useEffect(() => {
     engineRef.current?.applySettings(settings)
   }, [settings])
+
+  // background music: global (not engine-scoped) — follows the settings toggle
+  useEffect(() => {
+    setMusicEnabled(settings.music)
+  }, [settings.music])
 
   // ball skin propagation
   useEffect(() => {

@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.boomchin.game"
-    android:versionCode="1"
-    android:versionName="1.0">
+    android:versionCode="3"
+    android:versionName="1.2">
 
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34" />
 
@@ -39,7 +39,9 @@
         </activity>
 
         <!-- گیرنده‌ی پیام‌های پرداخت بازار (fallback رسمی نمونه‌ی بازار) -->
-        <receiver android:name="com.example.android.trivialdrivesample.util.IABReceiver">
+        <receiver
+            android:name="com.example.android.trivialdrivesample.util.IABReceiver"
+            android:exported="true">
             <intent-filter>
                 <action android:name="com.farsitel.bazaar.ping" />
                 <action android:name="com.farsitel.bazaar.purchase" />

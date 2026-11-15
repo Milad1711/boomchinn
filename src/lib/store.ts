@@ -16,6 +16,8 @@ export interface Settings {
   shadows: boolean
   /** Success chime when two balls merge. */
   sound: boolean
+  /** Light background music loop. */
+  music: boolean
 }
 
 export interface Inventory {
@@ -87,6 +89,7 @@ export const DEFAULT_SETTINGS: Settings = {
   haptics: true,
   shadows: true,
   sound: true,
+  music: true,
 }
 
 interface SaveData {

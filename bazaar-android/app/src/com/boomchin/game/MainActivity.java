@@ -50,6 +50,7 @@ public class MainActivity extends Activity {
         s.setDatabaseEnabled(true);
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
+        s.setMediaPlaybackRequiresUserGesture(false);
         web.setBackgroundColor(Color.parseColor("#a8ecd9"));
         web.setOverScrollMode(WebView.OVER_SCROLL_NEVER);
 
