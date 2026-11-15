@@ -69,3 +69,6 @@ migration.sql
 
 # sandbox gateway config
 Caddyfile
+
+# generated download artifact
+/public/*.zip
