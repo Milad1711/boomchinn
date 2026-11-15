@@ -1,12 +1,10 @@
 'use client'
 
 /**
- * Main menu screen — logo, title, primary navigation.
+ * Main menu screen — title, primary navigation.
  */
-import { useState } from 'react'
-import Image from 'next/image'
 import { motion } from 'framer-motion'
-import { Coins, Play, Settings, Shapes, ShoppingBag, Star, Trophy, UserRound } from 'lucide-react'
+import { Coins, Play, Settings, ShoppingBag, Star, Trophy, UserRound } from 'lucide-react'
 import { totalStars, useGameStore } from '@/lib/store'
 import { TIERS } from '@/game/types'
 import { faNum } from '@/lib/format'
@@ -38,7 +36,6 @@ export default function MainMenu() {
   const stars = useGameStore((s) => s.stars)
   const name = useGameStore((s) => s.name)
   const setScreen = useGameStore((s) => s.setScreen)
-  const [logoOk, setLogoOk] = useState(true)
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-gradient-to-b from-[#d9f7ea] via-[#a8ecd9] to-[#7fe0d4]">
@@ -92,23 +89,6 @@ export default function MainMenu() {
 
       {/* Center content */}
       <main className="relative z-10 flex h-full flex-col items-center justify-center gap-5 px-6">
-        <div className="drop-shadow-[0_14px_20px_rgba(13,148,136,0.22)]">
-          {logoOk ? (
-            <Image
-              src="/logo-boomchin-v3.png"
-              width={240}
-              height={240}
-              alt="لوگوی بازی"
-              priority
-              onError={() => setLogoOk(false)}
-            />
-          ) : (
-            <div className="flex h-40 w-40 items-center justify-center rounded-[2.5rem] bg-white/70 shadow-inner">
-              <Shapes className="h-16 w-16 text-teal-600" aria-hidden="true" />
-            </div>
-          )}
-        </div>
-
         <div className="text-center">
           <h1 className="text-5xl font-black tracking-wide text-teal-900 drop-shadow-sm sm:text-6xl">بوم چین</h1>
           <p className="mt-1 text-lg font-bold text-teal-800/80">بچین، ادغام کن، بشکن!</p>
@@ -156,7 +136,7 @@ export default function MainMenu() {
 
       {/* Footnote */}
       <p className="pointer-events-none absolute inset-x-0 bottom-0 z-10 pb-[calc(env(safe-area-inset-bottom)+1rem)] text-center text-xs font-bold text-teal-800/60">
-        نسخه ۲.۰.۰ — بیش از ۱۰۰ مرحله — ساخته‌شده با Three.js
+        بیش از ۱۰۰ مرحله
       </p>
     </div>
   )
