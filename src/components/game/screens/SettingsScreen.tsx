@@ -5,7 +5,7 @@
  */
 import { useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { ArrowRight, Copy, KeyRound, Pencil, ShieldCheck, SunMedium, Trash2, UserRound, Vibrate, Volume2 } from 'lucide-react'
+import { ArrowRight, Copy, Download, KeyRound, Loader2, Pencil, ShieldCheck, SunMedium, Trash2, UserRound, Vibrate, Volume2 } from 'lucide-react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,6 +45,30 @@ export default function SettingsScreen() {
   const { toast } = useToast()
   const [nameOpen, setNameOpen] = useState(false)
   const [deviceId] = useState(() => getPlayerId())
+  const [downloading, setDownloading] = useState(false)
+
+  /** Download the project zip through the in-app button (fetch → blob → save). */
+  const downloadSource = async () => {
+    setDownloading(true)
+    try {
+      const res = await fetch('/boom-chin.zip')
+      if (!res.ok) throw new Error('bad status')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'boom-chin.zip'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 10_000)
+      toast({ title: 'دانلود شروع شد' })
+    } catch {
+      toast({ title: 'دانلود ناموفق بود — دوباره تلاش کنید', variant: 'destructive' })
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden bg-gradient-to-b from-[#d9f7ea] via-[#a8ecd9] to-[#7fe0d4]">
@@ -171,6 +195,36 @@ export default function SettingsScreen() {
               )}
               {adminDevice ? 'پنل مدیریت' : 'ورود مدیر'}
             </button>
+          </section>
+
+          {/* Source download */}
+          <section
+            aria-label="دانلود سورس پروژه"
+            className="w-full rounded-3xl bg-white p-6 shadow-md"
+          >
+            <p className="mb-1 text-xs font-black text-teal-500">سورس پروژه</p>
+            <p className="mb-4 text-sm font-bold leading-6 text-teal-700/80">
+              فایل کامل پروژه به‌همراه مخزن Git و راهنمای فارسی — آماده برای GitHub Desktop و
+              انتشار.
+            </p>
+            <button
+              type="button"
+              aria-label="دانلود فایل زیپ پروژه"
+              onClick={() => void downloadSource()}
+              disabled={downloading}
+              className="flex h-14 w-full items-center justify-center gap-2 rounded-3xl border-b-[6px] border-emerald-700 bg-emerald-500 text-lg font-black text-white shadow-lg transition-all hover:bg-emerald-600 active:translate-y-1.5 active:border-b-0 disabled:opacity-60"
+            >
+              {downloading ? (
+                <Loader2 className="h-6 w-6 animate-spin" aria-hidden="true" />
+              ) : (
+                <Download className="h-6 w-6" aria-hidden="true" />
+              )}
+              {downloading ? 'در حال آماده‌سازی…' : 'دانلود boom-chin.zip'}
+            </button>
+            <p className="mt-3 text-center text-[11px] font-bold leading-5 text-teal-700/60">
+              اگر مرورگر دانلود را مسدود کرد، با دکمه‌ی «Open in New Tab» سایت را در تب جدید باز
+              کنید و اینجا دوباره روی دکمه بزنید.
+            </p>
           </section>
 
           {/* Danger zone */}
