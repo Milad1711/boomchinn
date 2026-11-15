@@ -8,7 +8,7 @@
 
 ```
 app/
-  AndroidManifest.xml        ← پکیج: com.boomchin.game — نسخه: 1.1 (versionCode 2)
+  AndroidManifest.xml        ← پکیج: com.boomchin.game — نسخه: 1.3 (versionCode 4)
   src/com/boomchin/game/
     Config.java              ← ⭐ آدرس سایت + جای کلید RSA + شناسه‌ی محصولات
     MainActivity.java        ← WebView + پل خرید (JavascriptInterface)
@@ -20,20 +20,10 @@ keystore/boomchin.keystore   ← کلید امضا (خیلی مهم — گم ن�
 listing/icon-512.png         ← آیکون ۵۱۲ برای صفحه‌ی برنامه در پنل بازار
 ```
 
-## جاگذاری کلید RSA
+## کلید RSA (تنظیم شده ✓)
 
-1. وارد [developers.cafebazaar.ir](https://developers.cafebazaar.ir) شو → برنامه را ثبت کن (پکیج `com.boomchin.game`).
-2. در بخش **«پرداخت درون‌برنامه‌ای»** کلید RSA برنامه را کپی کن (رشته‌ی طولانی base64).
-3. فایل `app/src/com/boomchin/game/Config.java` را باز کن و داخل کوتیشن‌های
-   `BAZAAR_RSA_KEY` بچسبان:
-
-```java
-public static final String BAZAAR_RSA_KEY = "کلید-RSA-اینجا";
-```
-
-4. دوباره APK بساز (یا برای من بفرست تا بسازم).
-
-تا وقتی RSA خالی باشد: برنامه بدون خطا کار می‌کند ولی خریدها «نمایشی» می‌مانند.
+کلید عمومی RSA پرداخت درون‌برنامه‌ای بازار در `Config.java` جای‌گذاری شده است.
+اگر روزی کلید را از پنل بازار عوض کردی، همان‌جا به‌روزرسانی کن و دوباره APK بساز.
 
 ## محصولات (SKU) که باید در پنل بازار بسازی
 

@@ -1,99 +1,23 @@
 /**
- * بوم چین — Success audio (Web Audio API, fully synthesized, zero files).
+ * بوم چین — Sound effects (Web Audio API, fully synthesized, zero files).
  *
- * A short rising chime plays whenever two balls merge ("توپ به هم خورد")
- * so every merge is clearly signaled as a success. A small fanfare plays
- * when two max-tier gems produce a star blast.
+ *  - sfxShoot    : launch "thump + whoosh" when the turret fires a missile
+ *  - sfxImpact   : crash/boom when the missile lands (normal or bomb)
+ *  - sfxMerge    : rising chime when two balls merge
+ *  - sfxStarBlast: triumphant arpeggio for the max-tier star blast
  *
  * The AudioContext is created/resumed lazily from a user gesture
- * (engine pointerdown) to satisfy mobile autoplay policies. A light
- * background music loop (see startMusic) shares the same context.
+ * (engine pointerdown) to satisfy mobile autoplay policies.
  */
 
 let ctx: AudioContext | null = null
 let enabled = true
 
-// ------------------------------------------------------- background music
-// Light instrumental loop (public/music/boomchin-theme.mp3), played on a
-// looping AudioBufferSource so it repeats seamlessly. Starts on the first
-// user gesture (same unlockAudio as the SFX) and can be toggled in settings.
-
-let musicEnabled = true
-let musicStarting = false
-let musicSource: AudioBufferSourceNode | null = null
-let musicGain: GainNode | null = null
-let visibilityHooked = false
-
-/** Music volume (the rendered file itself is already very quiet). */
-const MUSIC_VOLUME = 0.55
-const MUSIC_URL = '/music/boomchin-theme.mp3'
-
-function hookVisibility() {
-  if (visibilityHooked || typeof document === 'undefined') return
-  visibilityHooked = true
-  document.addEventListener('visibilitychange', () => {
-    if (!ctx) return
-    if (document.hidden) {
-      void ctx.suspend().catch(() => undefined)
-    } else {
-      void ctx.resume().catch(() => undefined)
-    }
-  })
-}
-
-async function startMusic() {
-  if (!ctx || ctx.state !== 'running' || !musicEnabled || musicStarting || musicSource) return
-  musicStarting = true
-  try {
-    const res = await fetch(MUSIC_URL)
-    if (!res.ok) throw new Error(String(res.status))
-    const raw = await res.arrayBuffer()
-    const buffer = await ctx.decodeAudioData(raw)
-    if (!ctx || !musicEnabled) return
-    musicGain = ctx.createGain()
-    musicGain.gain.value = MUSIC_VOLUME
-    musicGain.connect(ctx.destination)
-    const src = ctx.createBufferSource()
-    src.buffer = buffer
-    src.loop = true
-    src.connect(musicGain)
-    src.start()
-    musicSource = src
-    hookVisibility()
-  } catch {
-    /* music is optional — never break the game over it */
-  } finally {
-    musicStarting = false
-  }
-}
-
-function stopMusic() {
-  try {
-    musicSource?.stop()
-  } catch {
-    /* already stopped */
-  }
-  musicSource = null
-  try {
-    musicGain?.disconnect()
-  } catch {
-    /* ignore */
-  }
-  musicGain = null
-}
-
-/** Toggle the background music from game settings. */
-export function setMusicEnabled(v: boolean) {
-  musicEnabled = v
-  if (v) void startMusic()
-  else stopMusic()
-}
-
 type WindowWithWebkit = Window & typeof globalThis & {
   webkitAudioContext?: typeof AudioContext
 }
 
-/** Toggle the success chime from game settings. */
+/** Toggle the sound effects from game settings. */
 export function setSoundEnabled(v: boolean) {
   enabled = v
 }
@@ -109,8 +33,6 @@ export function unlockAudio() {
       ctx = new AC()
     }
     if (ctx.state === 'suspended') void ctx.resume().catch(() => undefined)
-    // background music rides on the same unlocked context
-    if (musicEnabled) void startMusic()
   } catch {
     /* audio not available on this device */
   }
@@ -141,6 +63,91 @@ function tone({ freq, at, dur, type = 'triangle', gain = 0.16, glideTo }: ToneOp
   g.connect(ctx.destination)
   osc.start(t0)
   osc.stop(t0 + dur + 0.05)
+}
+
+// ------------------------------------------------------------ noise helpers
+
+let noiseBuf: AudioBuffer | null = null
+
+/** Shared 0.35s white-noise buffer (created lazily, reused everywhere). */
+function noise(): AudioBuffer | null {
+  if (!ctx) return null
+  if (!noiseBuf) {
+    const len = Math.floor(ctx.sampleRate * 0.35)
+    noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate)
+    const d = noiseBuf.getChannelData(0)
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1
+  }
+  return noiseBuf
+}
+
+interface NoiseOpts {
+  at: number
+  dur: number
+  type?: BiquadFilterType
+  /** Filter start frequency (Hz). */
+  freq: number
+  /** Optional filter sweep target (Hz). */
+  sweepTo?: number
+  q?: number
+  gain?: number
+}
+
+/** Filtered noise burst — the raw material for whooshes, crashes and debris. */
+function noiseBurst({ at, dur, type = 'lowpass', freq, sweepTo, q, gain = 0.2 }: NoiseOpts) {
+  if (!ctx || ctx.state !== 'running') return
+  const buf = noise()
+  if (!buf) return
+  const t0 = ctx.currentTime + at
+  const src = ctx.createBufferSource()
+  src.buffer = buf
+  // random read offset so consecutive bursts never sound identical
+  const offset = Math.random() * Math.max(0, buf.duration - dur - 0.02)
+  const f = ctx.createBiquadFilter()
+  f.type = type
+  f.frequency.setValueAtTime(freq, t0)
+  if (sweepTo) f.frequency.exponentialRampToValueAtTime(Math.max(40, sweepTo), t0 + dur)
+  if (q) f.Q.value = q
+  const g = ctx.createGain()
+  g.gain.setValueAtTime(0.0001, t0)
+  g.gain.exponentialRampToValueAtTime(gain, t0 + 0.01)
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur)
+  src.connect(f)
+  f.connect(g)
+  g.connect(ctx.destination)
+  src.start(t0, offset)
+  src.stop(t0 + dur + 0.05)
+}
+
+// ---------------------------------------------------------- game sound fx
+
+/** Launch sound: a soft cannon "puff" thump + airy whoosh sweeping upward. */
+export function sfxShoot() {
+  if (!enabled) return
+  unlockAudio()
+  if (!ctx || ctx.state !== 'running') return
+  tone({ freq: 250, at: 0, dur: 0.15, type: 'sine', gain: 0.2, glideTo: 80 })
+  noiseBurst({ at: 0.01, dur: 0.2, type: 'bandpass', freq: 750, sweepTo: 2800, q: 1.2, gain: 0.14 })
+}
+
+/**
+ * Missile impact sound. `bomb` gives a much deeper, wider explosion.
+ */
+export function sfxImpact(bomb = false) {
+  if (!enabled) return
+  unlockAudio()
+  if (!ctx || ctx.state !== 'running') return
+  if (bomb) {
+    // big boom: sub-bass drop + wide crashing noise + bright crack
+    tone({ freq: 160, at: 0, dur: 0.5, type: 'sine', gain: 0.42, glideTo: 44 })
+    noiseBurst({ at: 0, dur: 0.42, type: 'lowpass', freq: 2400, sweepTo: 220, gain: 0.32 })
+    noiseBurst({ at: 0.01, dur: 0.16, type: 'highpass', freq: 1500, gain: 0.09 })
+    return
+  }
+  // crisp hit: short body drop + muffled crash + tiny debris sparkle
+  tone({ freq: 200, at: 0, dur: 0.18, type: 'sine', gain: 0.28, glideTo: 62 })
+  noiseBurst({ at: 0, dur: 0.15, type: 'lowpass', freq: 1900, sweepTo: 380, gain: 0.2 })
+  noiseBurst({ at: 0.02, dur: 0.08, type: 'highpass', freq: 2600, gain: 0.07 })
 }
 
 /**

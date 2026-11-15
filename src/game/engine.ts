@@ -34,7 +34,7 @@ import {
 import { BALL_SKINS, type Settings } from '@/lib/store'
 import { faNum } from '@/lib/format'
 import { Effects } from './effects'
-import { unlockAudio, setSoundEnabled, setMusicEnabled, sfxMerge, sfxStarBlast } from './audio'
+import { unlockAudio, setSoundEnabled, sfxShoot, sfxImpact, sfxMerge, sfxStarBlast } from './audio'
 
 export interface EngineCallbacks {
   onScore: (delta: number) => void
@@ -229,7 +229,7 @@ export class GameEngine {
     this.def = LEVELS[levelIndex] ?? LEVELS[0]
     this.cb = cb
     this.shots = this.def.shots
-    this.settings = { haptics: true, shadows: true, sound: true, music: true }
+    this.settings = { haptics: true, shadows: true, sound: true }
     setSoundEnabled(true)
 
     // ---------------------------------------------------------- renderer
@@ -885,6 +885,7 @@ export class GameEngine {
     ctrl.y += Math.min(2.2, 0.9 + dist * 0.22)
 
     this.buzz(25)
+    if (this.settings.sound) sfxShoot()
     this.shake = Math.max(this.shake, 0.14)
     this.recoil = 1
     this.fx.burst(from, '#ffd27a', 10, 3.4, 1.4)
@@ -971,6 +972,7 @@ export class GameEngine {
   private impactMissile(m: MissileItem) {
     const p = new THREE.Vector3(m.mesh.position.x, Math.max(0.4, m.mesh.position.y), m.mesh.position.z)
     const c = new CANNON.Vec3(p.x, p.y, p.z)
+    if (this.settings.sound) sfxImpact(m.bomb)
     if (m.bomb) {
       this.fx.burst(p, '#ffb14d', 40, 7, 3)
       this.fx.ring(p, '#ffb14d', 3.6)
@@ -1506,7 +1508,6 @@ export class GameEngine {
   applySettings(s: Settings) {
     this.settings = s
     setSoundEnabled(s.sound)
-    setMusicEnabled(s.music)
     if (this.renderer.shadowMap.enabled !== s.shadows) {
       this.renderer.shadowMap.enabled = s.shadows
       this.scene.traverse((obj) => {

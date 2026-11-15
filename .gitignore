@@ -75,3 +75,6 @@ Caddyfile
 
 # android build outputs
 bazaar-android/app/build/
+
+bazaar-android/build/
+bazaar-android/BoomChin.apk.idsig

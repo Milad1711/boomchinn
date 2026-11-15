@@ -13,15 +13,11 @@ public final class Config {
 
     /**
      * کلید عمومی RSA پرداخت درون‌برنامه‌ای کافه بازار.
-     *
-     * محل گرفتن: پنل توسعه‌دهندگان بازار (developers.cafebazaar.ir) →
-     * انتخاب برنامه → «پرداخت درون‌برنامه‌ای» → کپی کلید RSA
-     *
-     * کلید را دقیقاً بین دو کوتیشن بچسبان (همان رشته‌ی طولانی base64 که
-     * با gAAAA شروع می‌شود). تا وقتی خالی باشد، خرید واقعی غیرفعال است و
-     * بازی به‌صورت خودکار از خرید نمایشی استفاده می‌کند.
+     * منبع: پنل توسعه‌دهندگان بازار → برنامه «بوم چین» → پرداخت درون‌برنامه‌ای.
+     * تا وقتی این کلید تنظیم باشد، خرید واقعی بازار فعال است.
      */
-    public static final String BAZAAR_RSA_KEY = "";
+    public static final String BAZAAR_RSA_KEY =
+            "MIHNMA0GCSqGSIb3DQEBAQUAA4G7ADCBtwKBrwDAD/RufsTIAv4tPRtbc1RewBoYmN6BX2Kf3Pfw5zIc23EpzV9LcJY0hH5d4SIeRAQSwH1Cb/co0sOrQO7Msl427XAqn0e1Nm94lS51lSO0zy5JdlR7XvEuHHiZxXxMP9hcZD+fBn2FcsODlQcR+/ZjyNQ6DyE+TUeQzLJsbL0dypnKbMJIuaNNWOVq210OxpO8O9k1/0xWrYSWDtKu3joczcNPrtcE37zoQkxgFu8CAwEAAQ==";
 
     /**
      * شناسه‌ی بسته‌های سکه در پنل بازار.
